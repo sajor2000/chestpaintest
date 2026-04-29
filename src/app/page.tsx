@@ -1,7 +1,8 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import type { FileUIPart } from "ai";
 
 const RISK_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   LOW: { bg: "bg-emerald-50", border: "border-emerald-500", text: "text-emerald-800" },
@@ -78,10 +79,21 @@ function ToolResult({ part }: { part: ToolPart }) {
   );
 }
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Chat() {
   const [input, setInput] = useState("");
   const [showPathway, setShowPathway] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{ url: string; name: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { messages, sendMessage, status } = useChat();
   const isLoading = status === "streaming" || status === "submitted";
 
@@ -89,9 +101,32 @@ export default function Chat() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  const handleImageSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    const url = await fileToDataUrl(file);
+    setPendingImage({ url, name: file.name });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  const handleSend = useCallback(() => {
+    const text = input.trim();
+    if (!text && !pendingImage) return;
+    if (isLoading) return;
+
+    const files: FileUIPart[] = pendingImage
+      ? [{ type: "file", mediaType: "image/png", url: pendingImage.url, filename: pendingImage.name }]
+      : [];
+
+    sendMessage({ text: text || "Please review this ECG image.", files });
+    setInput("");
+    setPendingImage(null);
+  }, [input, pendingImage, isLoading, sendMessage]);
+
   return (
     <div className="flex flex-col h-dvh bg-[#f7f7f7]">
-      {/* Header — Rush green */}
+      {/* Header */}
       <header className="bg-[#006332] text-white px-4 py-3 flex items-center gap-3 shrink-0 shadow-sm">
         <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center text-sm font-bold tracking-tight">
           R
@@ -168,6 +203,21 @@ export default function Chat() {
                     </span>
                   );
                 }
+                if (
+                  part.type === "file" &&
+                  "mediaType" in part &&
+                  typeof part.mediaType === "string" &&
+                  part.mediaType.startsWith("image/")
+                ) {
+                  return (
+                    <img
+                      key={`${msg.id}-${i}`}
+                      src={(part as FileUIPart).url}
+                      alt="ECG upload"
+                      className="rounded-lg max-w-full mt-1 mb-1"
+                    />
+                  );
+                }
                 if (part.type.startsWith("tool-")) {
                   return (
                     <ToolResult
@@ -200,27 +250,66 @@ export default function Chat() {
         </p>
       </div>
 
+      {/* Image preview */}
+      {pendingImage && (
+        <div className="px-4 py-2 bg-white border-t border-gray-100 flex items-center gap-3">
+          <img
+            src={pendingImage.url}
+            alt="ECG preview"
+            className="h-16 rounded-md border border-gray-200"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-[#353535] font-medium truncate">{pendingImage.name}</p>
+            <p className="text-[10px] text-[#494949]/60">ECG image attached — AI will provide a preliminary read for your review</p>
+          </div>
+          <button
+            onClick={() => setPendingImage(null)}
+            className="text-[#494949]/40 hover:text-red-500 transition-colors"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Input */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (!input.trim() || isLoading) return;
-          sendMessage({ text: input });
-          setInput("");
+          handleSend();
         }}
         className="px-4 pb-4 pt-1 bg-white border-t border-gray-100"
       >
         <div className="flex items-center gap-2 bg-[#f7f7f7] border border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-[#006332]/40 focus-within:ring-1 focus-within:ring-[#006332]/20 transition-all">
           <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageSelect}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isLoading}
+            className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-[#494949]/50 hover:text-[#006332] hover:bg-[#006332]/5 disabled:opacity-30 transition-colors"
+            title="Upload ECG image"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
+          <input
             className="flex-1 bg-transparent outline-none text-[14px] text-[#353535] placeholder:text-[#494949]/40"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Describe findings or answer the question..."
+            placeholder={pendingImage ? "Add a note about this ECG (optional)..." : "Describe findings or answer the question..."}
             disabled={isLoading}
           />
           <button
             type="submit"
-            disabled={!input.trim() || isLoading}
+            disabled={(!input.trim() && !pendingImage) || isLoading}
             className="shrink-0 w-9 h-9 rounded-lg bg-[#006332] text-white flex items-center justify-center disabled:opacity-30 hover:bg-[#004d27] transition-colors"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
