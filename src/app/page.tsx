@@ -91,7 +91,7 @@ function fileToDataUrl(file: File): Promise<string> {
 export default function Chat() {
   const [input, setInput] = useState("");
   const [showPathway, setShowPathway] = useState(false);
-  const [pendingImage, setPendingImage] = useState<{ url: string; name: string } | null>(null);
+  const [pendingImage, setPendingImage] = useState<{ url: string; name: string; mediaType: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { messages, sendMessage, status } = useChat();
@@ -101,12 +101,23 @@ export default function Chat() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+  const MAX_IMAGE_BYTES = 1024 * 1024; // 1 MB
+
   const handleImageSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) return;
-    const url = await fileToDataUrl(file);
-    setPendingImage({ url, name: file.name });
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) return;
+    if (file.size > MAX_IMAGE_BYTES) {
+      alert("Image must be under 1 MB. Please crop or compress the ECG image.");
+      return;
+    }
+    try {
+      const url = await fileToDataUrl(file);
+      setPendingImage({ url, name: file.name, mediaType: file.type });
+    } catch {
+      alert("Could not read the image file. Please try again.");
+    }
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
@@ -116,7 +127,7 @@ export default function Chat() {
     if (isLoading) return;
 
     const files: FileUIPart[] = pendingImage
-      ? [{ type: "file", mediaType: "image/png", url: pendingImage.url, filename: pendingImage.name }]
+      ? [{ type: "file", mediaType: pendingImage.mediaType, url: pendingImage.url, filename: pendingImage.name }]
       : [];
 
     sendMessage({ text: text || "Please review this ECG image.", files });

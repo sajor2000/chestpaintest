@@ -16,6 +16,13 @@ import {
 
 const MAX_MESSAGES = 30;
 const MAX_MESSAGE_LENGTH = 2000;
+const MAX_FILE_DATA_URL_LENGTH = 1_400_000; // ~1 MB base64
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
 
 function validateMessages(messages: UIMessage[]): UIMessage[] {
   return messages
@@ -23,11 +30,24 @@ function validateMessages(messages: UIMessage[]): UIMessage[] {
     .slice(-MAX_MESSAGES)
     .map((m) => ({
       ...m,
-      parts: m.parts.map((p) =>
-        p.type === "text"
-          ? { ...p, text: p.text.slice(0, MAX_MESSAGE_LENGTH) }
-          : p
-      ),
+      parts: m.parts
+        .map((p) => {
+          if (p.type === "text") {
+            return { ...p, text: p.text.slice(0, MAX_MESSAGE_LENGTH) };
+          }
+          if (
+            p.type === "file" &&
+            "mediaType" in p &&
+            "url" in p
+          ) {
+            const fp = p as { type: "file"; mediaType?: string; url?: string };
+            if (!fp.mediaType || !ALLOWED_IMAGE_TYPES.has(fp.mediaType)) return null;
+            if (!fp.url || fp.url.length > MAX_FILE_DATA_URL_LENGTH) return null;
+            return p;
+          }
+          return p;
+        })
+        .filter((p): p is NonNullable<typeof p> => p !== null),
     }));
 }
 
