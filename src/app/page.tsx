@@ -74,6 +74,7 @@ function ToolResult({ part }: { part: ToolPart }) {
 
 export default function Chat() {
   const [input, setInput] = useState("");
+  const [showPathway, setShowPathway] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { messages, sendMessage, status } = useChat();
   const isLoading = status === "streaming" || status === "submitted";
@@ -89,13 +90,34 @@ export default function Chat() {
         <div className="w-8 h-8 rounded bg-white/20 flex items-center justify-center text-xs font-bold">
           R
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-base font-semibold leading-tight">
             Chest Pain CDS
           </h1>
           <p className="text-xs text-white/70">hs-TnI Pathway — Rush USOH</p>
         </div>
+        <button
+          onClick={() => setShowPathway((p) => !p)}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+            showPathway
+              ? "bg-white text-[#003366]"
+              : "bg-white/15 text-white hover:bg-white/25"
+          }`}
+        >
+          {showPathway ? "Hide Pathway" : "View Pathway"}
+        </button>
       </header>
+
+      {/* Collapsible pathway reference */}
+      {showPathway && (
+        <div className="border-b border-slate-200 bg-white overflow-auto max-h-[50vh] shrink-0">
+          <img
+            src="/troponin-pathway.png"
+            alt="Rush High Sensitivity Troponin I Algorithm"
+            className="w-full min-w-[700px] p-2"
+          />
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
