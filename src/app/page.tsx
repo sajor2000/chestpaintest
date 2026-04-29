@@ -229,6 +229,33 @@ export default function Chat() {
                     />
                   );
                 }
+                if (part.type === "tool-suggest_followups") {
+                  const tp = part as ToolPart;
+                  const opts = tp.output?.options;
+                  if (!Array.isArray(opts) || opts.length === 0) return null;
+                  const isLast = msg.id === messages[messages.length - 1]?.id;
+                  return (
+                    <div key={`${msg.id}-${i}`} className="flex flex-wrap gap-2 mt-2">
+                      {(opts as string[]).map((opt) => (
+                        <button
+                          key={opt}
+                          disabled={!isLast || isLoading}
+                          onClick={() => {
+                            if (!isLast || isLoading) return;
+                            sendMessage({ text: opt });
+                          }}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${
+                            isLast && !isLoading
+                              ? "border-[#006332] text-[#006332] bg-white hover:bg-[#006332] hover:text-white cursor-pointer"
+                              : "border-gray-200 text-gray-400 bg-gray-50 cursor-default"
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                }
                 if (part.type.startsWith("tool-")) {
                   return (
                     <ToolResult

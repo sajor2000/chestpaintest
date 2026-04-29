@@ -331,3 +331,16 @@ export const determineDisposition = tool({
     };
   },
 });
+
+export const suggestFollowups = tool({
+  description:
+    "Present quick-reply buttons when asking the physician a question with discrete answer options. Call this alongside your question text.",
+  inputSchema: z.object({
+    options: z
+      .array(z.string())
+      .min(2)
+      .max(6)
+      .describe("Button labels — short clinical phrases"),
+  }),
+  execute: async ({ options }) => ({ options }),
+});

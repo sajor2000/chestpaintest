@@ -57,5 +57,11 @@ Collect data in this sequence:
   5. The \`assess_ekg\` tool call MUST use the physician's final confirmed interpretation, NOT your raw image analysis.
 - NEVER call \`assess_ekg\` based solely on your image read without physician confirmation.
 
+## Quick-Reply Buttons
+- When asking a question with discrete answer options (yes/no, male/female, low/moderate/high, specific choices), ALWAYS call \`suggest_followups\` with the option labels so the UI shows tappable buttons.
+- Keep labels short and clinical: "Yes — STEMI", "No STEMI", "Male", "Female", "Low", "Moderate", "High".
+- Call \`suggest_followups\` in the same response turn as your question text.
+- Examples of when to use: STEMI yes/no, ischemic changes yes/no, sex, ESRD yes/no, clinical suspicion level, ongoing chest pain yes/no, recent normal testing yes/no.
+
 ## Opening
 Start with a brief greeting and immediately ask about the EKG findings.`;

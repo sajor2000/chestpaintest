@@ -12,6 +12,7 @@ import {
   calculateDelta,
   calculateHeartScore,
   determineDisposition,
+  suggestFollowups,
 } from "@/lib/tools";
 
 const MAX_MESSAGES = 30;
@@ -80,6 +81,7 @@ export async function POST(req: Request) {
       calculate_delta: calculateDelta,
       calculate_heart_score: calculateHeartScore,
       determine_disposition: determineDisposition,
+      suggest_followups: suggestFollowups,
     },
   });
 
