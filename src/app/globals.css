@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
 :root {
+  --rush-green: #006332;
+  --rush-green-dark: #004d27;
+  --rush-green-light: #e8f5ee;
+  --rush-gold: #c8902e;
+  --rush-text: #353535;
+  --rush-text-light: #494949;
+  --rush-bg: #f7f7f7;
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #353535;
 }
 
 @theme inline {
@@ -13,7 +20,9 @@
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background: var(--rush-bg);
+  color: var(--rush-text);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
