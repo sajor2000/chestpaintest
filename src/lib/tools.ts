@@ -45,12 +45,13 @@ export const evaluateTroponin = tool({
   description:
     "Evaluate a high-sensitivity troponin I value against sex-specific 99th percentile URL thresholds.",
   inputSchema: z.object({
-    value: z.number().describe("HST value in ng/L"),
+    value: z.number().nonnegative().describe("HST value in ng/L"),
     hour: z.enum(["0", "2", "4"]).describe("Timepoint of the draw"),
     sex: z.enum(["male", "female"]).describe("Patient sex"),
     is_esrd: z.boolean().describe("Does the patient have ESRD?"),
     symptom_duration_hours: z
       .number()
+      .nonnegative()
       .optional()
       .describe("Hours since symptom onset"),
     clinical_suspicion: z
@@ -113,24 +114,38 @@ export const calculateDelta = tool({
   description:
     "Calculate the delta (change) between the 0hr troponin and a subsequent draw. Determines significance per Rush pathway rules.",
   inputSchema: z.object({
-    hst_0hr: z.number().describe("0-hour HST value in ng/L"),
-    hst_current: z.number().describe("Current HST value in ng/L"),
+    hst_0hr: z.number().nonnegative().describe("0-hour HST value in ng/L"),
+    hst_current: z
+      .number()
+      .nonnegative()
+      .describe("Current HST value in ng/L"),
     hour: z
       .enum(["2", "4"])
       .describe("Timepoint of the current draw (2hr or 4hr)"),
   }),
   execute: async ({ hst_0hr, hst_current, hour }) => {
     const absolute_delta = Math.abs(hst_current - hst_0hr);
-    const direction = hst_current > hst_0hr ? "rising" : hst_current < hst_0hr ? "falling" : "unchanged";
+    const direction =
+      hst_current > hst_0hr
+        ? "rising"
+        : hst_current < hst_0hr
+          ? "falling"
+          : "unchanged";
     const max_value = Math.max(hst_0hr, hst_current);
 
     let significant: boolean;
     let method: string;
 
     if (max_value >= T.HIGH_VALUE_CUTOFF) {
-      const pct_change = absolute_delta / hst_0hr;
-      significant = pct_change >= T.SIGNIFICANT_DELTA_PERCENT;
-      method = `20% change rule (HST ≥100): ${(pct_change * 100).toFixed(1)}% change`;
+      const denominator = Math.min(hst_0hr, hst_current);
+      if (denominator === 0) {
+        significant = true;
+        method = `Rise from 0 to ${max_value} ng/L — inherently significant`;
+      } else {
+        const pct_change = absolute_delta / denominator;
+        significant = pct_change >= T.SIGNIFICANT_DELTA_PERCENT;
+        method = `20% change rule (HST ≥100): ${(pct_change * 100).toFixed(1)}% change`;
+      }
     } else {
       significant = absolute_delta >= T.SIGNIFICANT_DELTA_ABSOLUTE;
       method = `Absolute delta rule: ${absolute_delta} ng/L (threshold: ${T.SIGNIFICANT_DELTA_ABSOLUTE} ng/L)`;
@@ -152,43 +167,25 @@ export const calculateDelta = tool({
   },
 });
 
+const heartComponent = z.union([z.literal(0), z.literal(1), z.literal(2)]);
+
 export const calculateHeartScore = tool({
   description:
     "Calculate the HEART score from its 5 components. Each component is scored 0, 1, or 2.",
   inputSchema: z.object({
-    history: z
-      .number()
-      .min(0)
-      .max(2)
-      .describe(
-        "History: 0=slightly suspicious, 1=moderately suspicious, 2=highly suspicious"
-      ),
-    ekg: z
-      .number()
-      .min(0)
-      .max(2)
-      .describe(
-        "EKG: 0=normal, 1=non-specific repolarization disturbance, 2=significant ST deviation"
-      ),
-    age: z
-      .number()
-      .min(0)
-      .max(2)
-      .describe("Age: 0=<45, 1=45-64, 2=≥65"),
-    risk_factors: z
-      .number()
-      .min(0)
-      .max(2)
-      .describe(
-        "Risk factors: 0=no known, 1=1-2 factors, 2=≥3 factors or history of atherosclerotic disease"
-      ),
-    troponin: z
-      .number()
-      .min(0)
-      .max(2)
-      .describe(
-        "Initial troponin: 0=≤normal limit, 1=1-3x normal limit, 2=>3x normal limit"
-      ),
+    history: heartComponent.describe(
+      "History: 0=slightly suspicious, 1=moderately suspicious, 2=highly suspicious"
+    ),
+    ekg: heartComponent.describe(
+      "EKG: 0=normal, 1=non-specific repolarization disturbance, 2=significant ST deviation"
+    ),
+    age: heartComponent.describe("Age: 0=<45, 1=45-64, 2=≥65"),
+    risk_factors: heartComponent.describe(
+      "Risk factors: 0=no known, 1=1-2 factors, 2=≥3 factors or history of atherosclerotic disease"
+    ),
+    troponin: heartComponent.describe(
+      "Initial troponin: 0=≤normal limit, 1=1-3x normal limit, 2=>3x normal limit"
+    ),
   }),
   execute: async ({ history, ekg, age, risk_factors, troponin }) => {
     const total = history + ekg + age + risk_factors + troponin;
@@ -217,13 +214,15 @@ export const determineDisposition = tool({
     significant_delta: z
       .boolean()
       .describe("Was there a significant troponin delta?"),
-    delta_value: z.number().optional().describe("The delta category: <4, 4-14, or ≥15"),
     ekg_ischemic_changes: z.boolean().describe("Ischemic EKG changes present?"),
     ongoing_chest_pain: z
       .boolean()
       .describe("Is the patient having ongoing cardiac chest pain?"),
-    heart_score: z.number().describe("HEART score total"),
-    symptom_duration_hours: z.number().describe("Hours since symptom onset"),
+    heart_score: z.number().int().min(0).max(10).describe("HEART score total"),
+    symptom_duration_hours: z
+      .number()
+      .nonnegative()
+      .describe("Hours since symptom onset"),
     is_esrd: z.boolean(),
     recent_normal_testing: z
       .boolean()
@@ -236,11 +235,21 @@ export const determineDisposition = tool({
       .describe("Met early rule-out criteria (<5 ng/L, Sx>3hr, low suspicion)?"),
   }),
   execute: async (input) => {
+    if (input.early_rule_out && input.is_esrd) {
+      return {
+        risk: "HIGH",
+        disposition: "ESRD patients cannot use early rule-out. A 2-hour HST is required.",
+        rationale: "ESRD exclusion — early rule-out does not apply.",
+        footnotes: [FOOTNOTES.C],
+      };
+    }
+
     if (input.early_rule_out) {
       return {
         risk: "LOW",
         disposition: DISPOSITIONS.LOW,
-        rationale: "Early MI rule-out met: HST <5 ng/L, symptoms >3hr, low clinical suspicion. NPV 99.5%.",
+        rationale:
+          "Early MI rule-out met: HST <5 ng/L, symptoms >3hr, low clinical suspicion. NPV 99.5%.",
         footnotes: [FOOTNOTES.B],
       };
     }
@@ -255,21 +264,37 @@ export const determineDisposition = tool({
       };
     }
 
-    if (input.significant_delta || input.ekg_ischemic_changes || input.ongoing_chest_pain) {
+    if (
+      input.significant_delta ||
+      input.ekg_ischemic_changes ||
+      input.ongoing_chest_pain
+    ) {
+      const reasons = [
+        input.significant_delta && "Significant troponin delta",
+        input.ekg_ischemic_changes && "Ischemic EKG changes",
+        input.ongoing_chest_pain && "Ongoing cardiac chest pain",
+      ].filter((x): x is string => Boolean(x));
+
+      const fn = [
+        input.ekg_ischemic_changes ? FOOTNOTES.A : null,
+        input.significant_delta ? FOOTNOTES.G : null,
+      ].filter((x): x is string => x !== null);
+
       return {
         risk: "HIGH",
         disposition: DISPOSITIONS.HIGH,
-        rationale: [
-          input.significant_delta && "Significant troponin delta",
-          input.ekg_ischemic_changes && "Ischemic EKG changes",
-          input.ongoing_chest_pain && "Ongoing cardiac chest pain",
-        ]
-          .filter(Boolean)
-          .join(", ") + ".",
-        footnotes: [
-          input.ekg_ischemic_changes ? FOOTNOTES.A : null,
-          input.significant_delta ? FOOTNOTES.G : null,
-        ].filter(Boolean),
+        rationale: reasons.join(", ") + ".",
+        footnotes: fn,
+      };
+    }
+
+    if (input.any_troponin_above_url) {
+      return {
+        risk: "INTERMEDIATE",
+        disposition: DISPOSITIONS.INTERMEDIATE,
+        rationale:
+          "Troponin at or above 99% URL without significant delta. Clinical correlation and observation required.",
+        footnotes: [],
       };
     }
 
@@ -292,7 +317,7 @@ export const determineDisposition = tool({
         risk: "LOW",
         disposition: DISPOSITIONS.LOW,
         rationale:
-          "No significant delta, below 99% URL, HEART <4, with recent normal testing or chronic unchanged HST.",
+          "No significant delta, below 99% URL, HEART <4, with recent normal testing.",
         footnotes: [],
       };
     }

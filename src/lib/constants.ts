@@ -14,7 +14,9 @@ export const HEART_SCORE_RISK = {
   HIGH: { min: 7, max: 10, label: "High" },
 } as const;
 
-export const FOOTNOTES: Record<string, string> = {
+type FootnoteKey = "A" | "B" | "C" | "D" | "E" | "F" | "G";
+
+export const FOOTNOTES: Record<FootnoteKey, string> = {
   A: "Ischemic ST or T changes → early cardiology consult.",
   B: "NPV for MI is 99.5%.",
   C: "ALL ESRD patients need 2hr HST.",

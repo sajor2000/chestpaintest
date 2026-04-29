@@ -1,23 +1,33 @@
 import { createAzure } from "@ai-sdk/azure";
 
-const deployment = process.env.CDS_AZURE_DEPLOYMENT ?? "gpt-4.1-mini";
-const apiVersion = process.env.CDS_AZURE_API_VERSION ?? "2025-01-01-preview";
-const endpoint =
-  process.env.CDS_AZURE_ENDPOINT ??
-  "https://rua-nonprod-ai-innovation.cognitiveservices.azure.com/openai/deployments";
-const apiKey = process.env.CDS_AZURE_KEY ?? "";
+const deployment = process.env.CDS_AZURE_DEPLOYMENT;
+const apiVersion = process.env.CDS_AZURE_API_VERSION;
+const endpoint = process.env.CDS_AZURE_ENDPOINT;
+const apiKey = process.env.CDS_AZURE_KEY;
+
+if (!deployment || !apiVersion || !endpoint || !apiKey) {
+  throw new Error(
+    "Missing required env vars: CDS_AZURE_KEY, CDS_AZURE_ENDPOINT, CDS_AZURE_DEPLOYMENT, CDS_AZURE_API_VERSION"
+  );
+}
+
+if (!/^[a-zA-Z0-9._-]{1,64}$/.test(deployment)) {
+  throw new Error(`Invalid CDS_AZURE_DEPLOYMENT: ${deployment}`);
+}
 
 const azure = createAzure({
   baseURL: endpoint,
   apiKey,
   apiVersion,
   fetch: async (url, options) => {
-    // @ai-sdk/azure v6 normalizes cognitiveservices URLs by inserting /v1/
-    // Fix: replace /v1/ with the actual deployment name
-    const fixed = String(url).replace(
+    const raw = String(url);
+    const fixed = raw.replace(
       /\/deployments\/v1\//,
       `/deployments/${deployment}/`
     );
+    if (fixed !== raw) {
+      console.warn("[azure] Applied /v1/ URL fix →", fixed.split("?")[0]);
+    }
     return globalThis.fetch(fixed, options);
   },
 });

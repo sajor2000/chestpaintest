@@ -11,13 +11,21 @@ const RISK_COLORS: Record<string, { bg: string; border: string; text: string }> 
   STEMI_PATHWAY: { bg: "bg-red-100", border: "border-red-600", text: "text-red-900" },
 };
 
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+function str(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+
 function RiskCard({ data }: { data: Record<string, unknown> }) {
-  const risk = (data.risk as string) ?? (data.action as string) ?? "";
+  const risk = str(data.risk) ?? str(data.action) ?? "";
   const colors = RISK_COLORS[risk] ?? RISK_COLORS.INTERMEDIATE;
-  const disposition = data.disposition as string | undefined;
-  const rationale = data.rationale as string | undefined;
-  const message = data.message as string | undefined;
-  const footnotes = (data.footnotes as string[]) ?? [];
+  const disposition = str(data.disposition);
+  const rationale = str(data.rationale);
+  const message = str(data.message);
+  const footnotes = isStringArray(data.footnotes) ? data.footnotes : [];
 
   return (
     <div className={`my-2 rounded-lg border-l-4 p-3 ${colors.bg} ${colors.border}`}>
@@ -36,17 +44,19 @@ function RiskCard({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-function ToolResult({ part }: { part: { type: string; result?: Record<string, unknown> } }) {
-  const data = part.result;
+type ToolPart = { type: string; state?: string; output?: Record<string, unknown> };
+
+function ToolResult({ part }: { part: ToolPart }) {
+  const data = part.output;
   if (!data) return null;
 
   if (data.risk || data.action === "STEMI_PATHWAY") {
     return <RiskCard data={data} />;
   }
 
-  const message = data.message as string | undefined;
-  const footnote = data.footnote as string | undefined;
-  const footnotes = data.footnotes as string[] | undefined;
+  const message = str(data.message);
+  const footnote = str(data.footnote);
+  const footnotes = isStringArray(data.footnotes) ? data.footnotes : undefined;
 
   if (!message) return null;
 
@@ -118,7 +128,7 @@ export default function Chat() {
                   return (
                     <ToolResult
                       key={`${msg.id}-${i}`}
-                      part={part as { type: string; result?: Record<string, unknown> }}
+                      part={part as ToolPart}
                     />
                   );
                 }
