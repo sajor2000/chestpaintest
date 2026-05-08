@@ -33,7 +33,7 @@ The chatbot walks the physician through the pathway step by step:
 | LLM | Azure OpenAI GPT-4.1-mini (Chat Completions API) |
 | Styling | Tailwind CSS v4 |
 | Testing | Vitest (61 pathway tests) |
-| FHIR | `fhirclient` (scaffold for Phase 2 Epic integration) |
+| FHIR | SMART on FHIR scaffold; add `fhirclient` during Phase 2 Epic integration |
 
 ## Setup
 
@@ -56,6 +56,24 @@ npm run dev
 
 Open http://localhost:3000 and type "start" to begin the pathway.
 
+## Deploy to Vercel
+
+Import the GitHub repository into Vercel and use the default Next.js settings:
+
+- Framework preset: Next.js
+- Install command: `npm install`
+- Build command: `npm run build`
+- Output directory: Next.js default
+
+Add these environment variables in Vercel before building:
+
+- `CDS_AZURE_KEY`
+- `CDS_AZURE_ENDPOINT`
+- `CDS_AZURE_DEPLOYMENT`
+- `CDS_AZURE_API_VERSION`
+
+Use `.env.example` as the template. Do not commit `.env.local`.
+
 ## Tests
 
 ```bash
@@ -72,6 +90,10 @@ npx vitest run
 - HEART score boundaries
 - All 4 disposition terminal nodes
 - 8 end-to-end patient scenarios
+
+## Pre-Deployment
+
+Use [PRE_DEPLOYMENT_CHECKLIST.md](PRE_DEPLOYMENT_CHECKLIST.md) before any public demo, clinical pilot, or production deploy.
 
 ## Project Structure
 

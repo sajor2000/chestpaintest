@@ -1,8 +1,12 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
+import Image from "next/image";
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { FileUIPart } from "ai";
+
+const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+const MAX_IMAGE_BYTES = 1024 * 1024; // 1 MB
 
 const RISK_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   LOW: { bg: "bg-emerald-50", border: "border-emerald-500", text: "text-emerald-800" },
@@ -101,9 +105,6 @@ export default function Chat() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
-  const MAX_IMAGE_BYTES = 1024 * 1024; // 1 MB
-
   const handleImageSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -168,9 +169,12 @@ export default function Chat() {
       {/* Collapsible pathway reference */}
       {showPathway && (
         <div className="border-b border-gray-200 bg-white overflow-auto max-h-[50vh] shrink-0">
-          <img
+          <Image
             src="/troponin-pathway.png"
             alt="Rush High Sensitivity Troponin I Algorithm"
+            width={837}
+            height={647}
+            priority
             className="w-full min-w-[700px] p-2"
           />
         </div>
@@ -221,11 +225,14 @@ export default function Chat() {
                   part.mediaType.startsWith("image/")
                 ) {
                   return (
-                    <img
+                    <Image
                       key={`${msg.id}-${i}`}
                       src={(part as FileUIPart).url}
                       alt="ECG upload"
-                      className="rounded-lg max-w-full mt-1 mb-1"
+                      width={640}
+                      height={480}
+                      unoptimized
+                      className="rounded-lg max-w-full h-auto mt-1 mb-1"
                     />
                   );
                 }
@@ -291,10 +298,13 @@ export default function Chat() {
       {/* Image preview */}
       {pendingImage && (
         <div className="px-4 py-2 bg-white border-t border-gray-100 flex items-center gap-3">
-          <img
+          <Image
             src={pendingImage.url}
             alt="ECG preview"
-            className="h-16 rounded-md border border-gray-200"
+            width={128}
+            height={64}
+            unoptimized
+            className="h-16 w-auto rounded-md border border-gray-200"
           />
           <div className="flex-1 min-w-0">
             <p className="text-xs text-[#353535] font-medium truncate">{pendingImage.name}</p>

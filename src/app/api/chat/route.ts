@@ -1,10 +1,13 @@
 import {
   streamText,
-  UIMessage,
   convertToModelMessages,
   stepCountIs,
 } from "ai";
 import { model } from "@/lib/azure";
+import {
+  RequestValidationError,
+  sanitizeClientMessages,
+} from "@/lib/chat-request";
 import { SYSTEM_PROMPT } from "@/lib/system-prompt";
 import {
   assessEkg,
@@ -14,43 +17,6 @@ import {
   determineDisposition,
   suggestFollowups,
 } from "@/lib/tools";
-
-const MAX_MESSAGES = 30;
-const MAX_MESSAGE_LENGTH = 2000;
-const MAX_FILE_DATA_URL_LENGTH = 1_400_000; // ~1 MB base64
-const ALLOWED_IMAGE_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-]);
-
-function validateMessages(messages: UIMessage[]): UIMessage[] {
-  return messages
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .slice(-MAX_MESSAGES)
-    .map((m) => ({
-      ...m,
-      parts: m.parts
-        .map((p) => {
-          if (p.type === "text") {
-            return { ...p, text: p.text.slice(0, MAX_MESSAGE_LENGTH) };
-          }
-          if (
-            p.type === "file" &&
-            "mediaType" in p &&
-            "url" in p
-          ) {
-            const fp = p as { type: "file"; mediaType?: string; url?: string };
-            if (!fp.mediaType || !ALLOWED_IMAGE_TYPES.has(fp.mediaType)) return null;
-            if (!fp.url || fp.url.length > MAX_FILE_DATA_URL_LENGTH) return null;
-            return p;
-          }
-          return p;
-        })
-        .filter((p): p is NonNullable<typeof p> => p !== null),
-    }));
-}
 
 export async function POST(req: Request) {
   let body: { messages?: unknown };
@@ -62,13 +28,24 @@ export async function POST(req: Request) {
     });
   }
 
-  if (!Array.isArray(body.messages)) {
-    return new Response(JSON.stringify({ error: "messages array required" }), {
-      status: 400,
-    });
+  let messages;
+  try {
+    messages = sanitizeClientMessages(body.messages);
+  } catch (error) {
+    if (error instanceof RequestValidationError) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 400,
+      });
+    }
+    throw error;
   }
 
-  const messages = validateMessages(body.messages as UIMessage[]);
+  if (messages.length === 0) {
+    return new Response(
+      JSON.stringify({ error: "at least one user message required" }),
+      { status: 400 }
+    );
+  }
 
   const result = streamText({
     model,

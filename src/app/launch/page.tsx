@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
 
 /**
@@ -19,6 +20,7 @@ export default function SmartLaunch() {
   useEffect(() => {
     // Phase 2: uncomment and configure with your Epic client_id
     //
+    // After adding the Phase 2 fhirclient dependency:
     // import("fhirclient").then(({ default: FHIR }) => {
     //   FHIR.oauth2.authorize({
     //     clientId: process.env.NEXT_PUBLIC_EPIC_CLIENT_ID!,
@@ -42,12 +44,12 @@ export default function SmartLaunch() {
           Hyperspace. It is a scaffold for Phase 2 integration.
         </p>
         <div className="pt-2">
-          <a
+          <Link
             href="/"
             className="inline-block px-4 py-2 bg-[#003366] text-white text-sm rounded-lg hover:bg-[#002244] transition-colors"
           >
             Open Standalone Chat
-          </a>
+          </Link>
         </div>
       </div>
     </div>
