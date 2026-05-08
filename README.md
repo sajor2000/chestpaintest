@@ -9,18 +9,20 @@ The chatbot walks the physician through the pathway step by step:
 1. **EKG Assessment** — STEMI/equivalent detection, ischemic ST/T changes
 2. **Troponin Evaluation** — sex-specific 99% URL thresholds (M: 35 ng/L, F: 14 ng/L)
 3. **Early MI Rule-Out** — HST <5 ng/L + Sx >3hr + low suspicion (NPV 99.5%)
-4. **Delta Calculation** — absolute (>=15 ng/L) or percentage (>=20% when HST >=100)
-5. **HEART Score** — 5-component scoring with risk stratification
-6. **Disposition** — Low (discharge) / Intermediate (observation) / Chronic Injury / High (admit)
+4. **Delta Calculation** — 3-lane routing: minimal (<4), intermediate (4–14, requires 4hr HST), significant (≥15 absolute or ≥20% when HST ≥100)
+5. **HEART Score** — LLM-guided 5-component scoring with visual breakdown card
+6. **Disposition** — Low (discharge) / Intermediate (observation) / Chronic Injury / High (admit) / Pending (4hr or repeat HST required)
 
-**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions with 69 tests, including 61 pathway tests verified against the source PDF.
+**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions with 86 tests verified node-by-node against the source PDF.
 
 ## Features
 
 - **Quick-reply buttons** for binary/choice questions (STEMI yes/no, sex, ESRD, etc.)
 - **ECG image upload** with optional AI-assisted second opinion (MD interpretation is always authoritative)
+- **HEART Score card** — visual 5-row breakdown with per-component scores, labels, and risk-level color coding; LLM walks clinician through each component with scoring criteria
 - **Pathway diagram** toggleable in the header for reference during assessment
-- **Risk cards** color-coded by disposition (green/yellow/orange/red)
+- **Risk cards** color-coded by disposition (green/amber/orange/red)
+- **PENDING dispositions** — intermediate delta (4–14) blocks disposition until 4hr HST obtained; symptoms <4hr require repeat HST (Footnote F)
 - **SMART on FHIR scaffold** for future Epic Hyperspace embedding
 - **Rush branding** matching rush.edu colors and design
 
@@ -32,7 +34,7 @@ The chatbot walks the physician through the pathway step by step:
 | AI SDK | Vercel AI SDK v6 (`@ai-sdk/azure`, `@ai-sdk/react`) |
 | LLM | Azure OpenAI GPT-4.1-mini (Chat Completions API) |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest (69 tests; 61 deterministic pathway tests) |
+| Testing | Vitest (86 tests; 78 deterministic pathway tests) |
 | FHIR | SMART on FHIR scaffold; add `fhirclient` during Phase 2 Epic integration |
 
 ## Setup
@@ -80,15 +82,20 @@ Use `.env.example` as the template. Do not commit `.env.local`.
 npx vitest run
 ```
 
-69 tests cover the pathway logic, request sanitization, route guard, and pathway UI workflow. The 61 deterministic pathway tests verify every decision node from the Rush hs-TnI pathway PDF:
+86 tests cover the pathway logic, request sanitization, route guard, and pathway UI workflow. The 78 deterministic pathway tests verify every decision node from the Rush hs-TnI pathway PDF:
 - STEMI/EQV diamond routing
 - 99% URL thresholds (boundary values)
 - Early MI rule-out (all 6 gate conditions)
 - ESRD guard (Footnote C)
 - PPV >200 flag (Footnote D)
-- Delta significance (absolute + 20% rule + zero baseline)
-- HEART score boundaries
-- All 4 disposition terminal nodes
+- Delta 3-lane routing: minimal (<4), intermediate (4–14), significant (≥15 / ≥20%)
+- 20% switching rule (replaces absolute threshold when either value ≥100)
+- HEART score boundaries and labels
+- PENDING_4HR (intermediate delta without 4hr result)
+- PENDING_REPEAT (symptoms <4hr, Footnote F)
+- Chronic Injury routing (above URL, no significant delta)
+- Low Risk OR criteria (recent testing / chronic HST / HEART <4)
+- All 7 PDF footnotes (A–G) emitted
 - 8 end-to-end patient scenarios
 
 ## Pre-Deployment
@@ -111,7 +118,7 @@ src/
     system-prompt.ts     # Pathway conversation guide + safety rules
     azure.ts             # Azure OpenAI provider config
   __tests__/
-    pathway.test.ts      # 61 tests against PDF source of truth
+    pathway.test.ts      # 78 tests against PDF source of truth
     route.test.ts        # /api/chat request-size guard
     chat-request.test.ts # browser message sanitization
     pathway-ui.test.ts   # pathway step and quick-reply normalization
@@ -119,14 +126,19 @@ src/
 
 ## Safety
 
-- 6 critical safety rules in the system prompt prevent the LLM from fabricating clinical decisions
-- All clinical logic runs in deterministic, tested tool functions
-- ESRD guard blocks early rule-out at both troponin evaluation and disposition levels
+- **9 critical safety rules** in the system prompt prevent the LLM from fabricating clinical decisions, skipping steps, or bypassing PENDING results
+- All clinical logic runs in deterministic, tested tool functions — the LLM cannot compute thresholds, deltas, or dispositions
+- `delta_range` must come verbatim from `calculate_delta` output (Rule 8); `early_rule_out` only from `evaluate_troponin` (Rule 9)
+- PENDING dispositions force data collection before final risk stratification (Rule 7)
+- ESRD guard blocks early rule-out at both troponin evaluation and disposition levels (double-lock)
 - Input validation: message role filtering, a 2 MB `/api/chat` Content-Length guard, and MIME allowlist for images
 - ECG image interpretation requires explicit physician confirmation before entering the pathway
+- Node-by-node PDF fidelity audit with 7 deviations found and corrected (see `docs/audits/pathway-build-audit.md`)
 
 ## Roadmap
 
 - **Phase 2**: SMART on FHIR Epic integration — auto-pull patient demographics, troponin labs, EKG results from the chart
+- **Server-owned pathway state**: Replace text-inferred step tracking with a deterministic state machine
 - **Auth**: Session-based authentication via SMART on FHIR OAuth when embedded in Epic
 - **Persistence**: Conversation history and audit trail for clinical documentation
+- **Clinical validation**: Physician walkthrough and sign-off against the official Rush pathway source
