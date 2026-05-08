@@ -66,10 +66,10 @@ export function normalizeQuickReplyOptions(
 }
 
 export function getPathwayStep(text: string): PathwayStepId {
-  if (/disposition|admit|observation|discharge|risk category|final risk/i.test(text)) {
+  if (/disposition|final risk/i.test(text)) {
     return "disposition";
   }
-  if (/\bheart\b|history.*ekg.*age|risk factors/i.test(text)) {
+  if (/heart score|heart risk|h\.?e\.?a\.?r\.?t\b.*scor|calculate.*heart|history.*ekg.*age/i.test(text)) {
     return "heart";
   }
   if (/\bdelta\b|\b2[- ]?hour\b|\b2h\b|\b4[- ]?hour\b|\b4h\b|serial hst|repeat hst/i.test(text)) {
