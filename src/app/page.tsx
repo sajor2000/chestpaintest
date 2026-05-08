@@ -178,12 +178,104 @@ function PathwayRail({ activeStep }: { activeStep: PathwayStepId }) {
   );
 }
 
+const HEART_COMPONENT_NAMES: Record<string, string> = {
+  history: "History",
+  ekg: "EKG",
+  age: "Age",
+  risk_factors: "Risk Factors",
+  troponin: "Troponin",
+};
+
+const HEART_RISK_COLORS: Record<string, { accent: string; bg: string; text: string }> = {
+  Low: { accent: "bg-emerald-500", bg: "bg-emerald-50", text: "text-emerald-700" },
+  Moderate: { accent: "bg-amber-500", bg: "bg-amber-50", text: "text-amber-700" },
+  High: { accent: "bg-red-500", bg: "bg-red-50", text: "text-red-700" },
+};
+
+function HeartScoreCard({ data }: { data: Record<string, unknown> }) {
+  const components = data.components as Record<string, number> | undefined;
+  const labels = data.labels as Record<string, string> | undefined;
+  const total = typeof data.total === "number" ? data.total : 0;
+  const risk_level = str(data.risk_level) ?? "Moderate";
+  const footnote = str(data.footnote);
+  const message = str(data.message);
+  const colors = HEART_RISK_COLORS[risk_level] ?? HEART_RISK_COLORS.Moderate;
+
+  if (!components || !labels) {
+    return message ? (
+      <div className="my-1.5 rounded-md bg-[#e8f5ee] border border-[#006332]/15 px-3 py-2 text-sm">
+        <div className="font-mono text-xs text-[#353535]">{message}</div>
+      </div>
+    ) : null;
+  }
+
+  return (
+    <div className="my-2 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className={`px-3 py-2 flex items-center justify-between ${colors.bg}`}>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold uppercase tracking-wide text-[#353535]">
+            HEART Score
+          </span>
+          <span className={`text-xs font-semibold ${colors.text}`}>
+            {risk_level} Risk
+          </span>
+        </div>
+        <div className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${colors.text} ${colors.bg} border ${
+          risk_level === "Low" ? "border-emerald-200" : risk_level === "High" ? "border-red-200" : "border-amber-200"
+        }`}>
+          {total}/10
+        </div>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {["history", "ekg", "age", "risk_factors", "troponin"].map((key) => {
+          const score = components[key] ?? 0;
+          return (
+            <div key={key} className="flex items-center gap-3 px-3 py-2">
+              <div className="w-24 shrink-0">
+                <div className="text-xs font-semibold text-[#353535]">
+                  {HEART_COMPONENT_NAMES[key]}
+                </div>
+              </div>
+              <div className="flex gap-1">
+                {[0, 1, 2].map((level) => (
+                  <div
+                    key={level}
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                      level === score
+                        ? `${colors.accent} text-white`
+                        : "bg-gray-100 text-gray-400"
+                    }`}
+                  >
+                    {level}
+                  </div>
+                ))}
+              </div>
+              <div className="flex-1 min-w-0 text-xs text-[#494949] truncate">
+                {labels[key]}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {footnote && (
+        <div className="px-3 py-1.5 border-t border-gray-100 text-xs text-[#494949] italic">
+          {footnote}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolResult({ part }: { part: ToolPart }) {
   const data = part.output;
   if (!data) return null;
 
   if (data.risk || data.action === "STEMI_PATHWAY") {
     return <RiskCard data={data} />;
+  }
+
+  if (part.type === "tool-calculate_heart_score" && data.components) {
+    return <HeartScoreCard data={data} />;
   }
 
   const message = str(data.message);

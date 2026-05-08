@@ -28,9 +28,9 @@ npm run build
 npm audit --omit=dev
 ```
 
-Current expected suite coverage is 69 Vitest tests:
+Current expected suite coverage is 86 Vitest tests:
 
-- 61 deterministic pathway tests for Rush hs-TnI thresholds, deltas, HEART score, ESRD guard, dispositions, and end-to-end patient scenarios.
+- 78 deterministic pathway tests for Rush hs-TnI thresholds, deltas (including 3-lane routing, 20% switching rule), HEART score (with labels), ESRD guard, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), and end-to-end patient scenarios.
 - 2 chat request sanitization tests.
 - 5 pathway UI workflow tests, including the ESRD question stale-button correction.
 - 1 chat route request-size guard test.
@@ -48,6 +48,40 @@ After any commit is pushed, confirm both remote checks:
 - `@ai-sdk/openai` has been removed as a direct dependency. It remains in the lockfile only because `@ai-sdk/azure` depends on it.
 - The current workflow step is still inferred in the UI from assistant text. This is useful for presentation, but it is not a server-owned pathway state.
 - The next major safety improvement is a deterministic pathway session controller that returns canonical `step`, `question`, `allowedOptions`, and tool-derived clinical results.
+
+## PDF Fidelity Audit (2026-05-08)
+
+A node-by-node audit was performed against `public/troponin-pathway.png`. Seven deviations were found and corrected:
+
+1. **Above URL + no significant delta → was INTERMEDIATE, PDF says CHRONIC_INJURY.** Fixed.
+2. **Delta 4–14 intermediate range not enforced.** Added `delta_category` (minimal/intermediate/significant) to `calculateDelta` and `PENDING_4HR` guard to `determineDisposition`.
+3. **Footnote F (Sx <4hr) not enforced in tools.** Added `PENDING_REPEAT` guard.
+4. **Footnote F never emitted.** Now emitted by `PENDING_REPEAT` path.
+5. **Low Risk criteria: HEART <4 treated as mandatory, PDF treats it as one of three OR criteria.** Fixed to match PDF: `(recent_normal_testing || chronic_unchanged_hst || heart_score < 4)`.
+6. **Below-URL chronic HST routed to CHRONIC_INJURY; PDF only reaches Chronic Injury via ≥URL path.** Fixed: below-URL chronic HST now qualifies for Low Risk per PDF.
+7. **`significant_delta` was a separate LLM input, creating an inconsistency vector.** Removed from schema; now derived internally from `delta_range`.
+
+### LLM Anti-Bypass Hardening
+
+Nine system prompt safety rules now prevent the LLM from deviating:
+- Rules 1-6: No computing without tools, no fabricating values, no skipping steps.
+- Rule 7: PENDING results must be followed (collect data, re-call tool).
+- Rule 8: `delta_range` must come from `calculate_delta` output verbatim.
+- Rule 9: `early_rule_out` only true if `evaluate_troponin` said eligible.
+
+All 7 PDF footnotes (A-G) are emitted by at least one tool.
+
+### HEART Score UI & Elicitation (2026-05-08)
+
+- `calculateHeartScore` now returns human-readable `labels` for each component (e.g., "Moderately suspicious", "1–2 risk factors").
+- `HeartScoreCard` component in `page.tsx` renders a visual 5-row breakdown with score indicators (0/1/2 circles), labels, and risk-level color coding (emerald/amber/red).
+- System prompt includes a detailed HEART Score Elicitation Guide with per-component scoring criteria, suggested button labels, and instructions for the LLM to help clinicians think through each component.
+- The LLM suggests troponin scoring based on prior HST values but always asks the clinician to confirm.
+- Delta rule system prompt wording corrected: "20% rule replaces (not supplements) the absolute threshold at high values" — matches the switching implementation in `calculateDelta`.
+
+### Final Audit (2026-05-08)
+
+A node-by-node audit of all 10+ PDF decision nodes confirmed full fidelity. No clinical logic deviations remain. One low-severity system prompt wording discrepancy (delta rule "or" vs switching semantics) was found and corrected.
 
 ## Release Blockers
 

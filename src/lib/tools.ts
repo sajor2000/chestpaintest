@@ -151,6 +151,14 @@ export const calculateDelta = tool({
       method = `Absolute delta rule: ${absolute_delta} ng/L (threshold: ${T.SIGNIFICANT_DELTA_ABSOLUTE} ng/L)`;
     }
 
+    const delta_category: "minimal" | "intermediate" | "significant" =
+      significant
+        ? "significant"
+        : absolute_delta >= T.INTERMEDIATE_DELTA_MIN
+          ? "intermediate"
+          : "minimal";
+    const needs_4hr_hst = delta_category === "intermediate";
+
     return {
       hst_0hr,
       hst_current,
@@ -158,16 +166,28 @@ export const calculateDelta = tool({
       absolute_delta,
       direction,
       significant,
+      delta_category,
+      needs_4hr_hst,
       method,
       footnote: FOOTNOTES.G,
       message: significant
         ? `Significant delta detected (${method}). Direction: ${direction}.`
-        : `Delta is NOT significant (${method}). Direction: ${direction}.`,
+        : needs_4hr_hst
+          ? `Delta is intermediate (${absolute_delta} ng/L, range 4–14). A 4-hour HST and repeat EKG are required.`
+          : `Delta is NOT significant (${method}). Direction: ${direction}.`,
     };
   },
 });
 
 const heartComponent = z.union([z.literal(0), z.literal(1), z.literal(2)]);
+
+const HEART_LABELS: Record<string, [string, string, string]> = {
+  history: ["Slightly suspicious", "Moderately suspicious", "Highly suspicious"],
+  ekg: ["Normal", "Non-specific repolarization disturbance", "Significant ST deviation"],
+  age: ["< 45", "45–64", "≥ 65"],
+  risk_factors: ["No known risk factors", "1–2 risk factors", "≥ 3 factors or atherosclerotic disease"],
+  troponin: ["≤ normal limit", "1–3× normal limit", "> 3× normal limit"],
+};
 
 const LOW_RISK_DISCHARGE_RECOMMENDATIONS = [
   "Discharge with follow-up if the treating physician agrees the full pathway criteria are met.",
@@ -201,8 +221,17 @@ export const calculateHeartScore = tool({
     else if (total <= HEART_SCORE_RISK.MODERATE.max) risk_level = "Moderate";
     else risk_level = "High";
 
+    const labels = {
+      history: HEART_LABELS.history[history],
+      ekg: HEART_LABELS.ekg[ekg],
+      age: HEART_LABELS.age[age],
+      risk_factors: HEART_LABELS.risk_factors[risk_factors],
+      troponin: HEART_LABELS.troponin[troponin],
+    };
+
     return {
       components: { history, ekg, age, risk_factors, troponin },
+      labels,
       total,
       risk_level,
       footnote: total >= 4 ? FOOTNOTES.E : null,
@@ -218,9 +247,6 @@ export const determineDisposition = tool({
     any_troponin_above_url: z
       .boolean()
       .describe("Was any troponin value at or above the sex-specific 99% URL?"),
-    significant_delta: z
-      .boolean()
-      .describe("Was there a significant troponin delta?"),
     ekg_ischemic_changes: z.boolean().describe("Ischemic EKG changes present?"),
     ongoing_chest_pain: z
       .boolean()
@@ -240,8 +266,18 @@ export const determineDisposition = tool({
     early_rule_out: z
       .boolean()
       .describe("Met early rule-out criteria (<5 ng/L, Sx>3hr, low suspicion)?"),
+    delta_range: z
+      .enum(["minimal", "intermediate", "significant"])
+      .describe(
+        "Delta category from calculate_delta: minimal (<4), intermediate (4-14), significant (≥15)"
+      ),
+    has_4hr_result: z
+      .boolean()
+      .describe("Has a 4-hour HST result been obtained?"),
   }),
   execute: async (input) => {
+    const significant_delta = input.delta_range === "significant";
+
     if (input.early_rule_out && input.is_esrd) {
       return {
         risk: "HIGH",
@@ -262,7 +298,21 @@ export const determineDisposition = tool({
       };
     }
 
-    if (input.any_troponin_above_url && input.significant_delta) {
+    if (
+      input.delta_range === "intermediate" &&
+      !input.has_4hr_result &&
+      !input.any_troponin_above_url
+    ) {
+      return {
+        risk: "PENDING",
+        disposition: DISPOSITIONS.PENDING_4HR,
+        rationale:
+          "Delta is in the 4–14 ng/L intermediate range. A 4-hour HST and repeat EKG are required before final disposition.",
+        footnotes: [FOOTNOTES.G],
+      };
+    }
+
+    if (input.any_troponin_above_url && significant_delta) {
       return {
         risk: "HIGH",
         disposition: DISPOSITIONS.HIGH,
@@ -273,19 +323,19 @@ export const determineDisposition = tool({
     }
 
     if (
-      input.significant_delta ||
+      significant_delta ||
       input.ekg_ischemic_changes ||
       input.ongoing_chest_pain
     ) {
       const reasons = [
-        input.significant_delta && "Significant troponin delta",
+        significant_delta && "Significant troponin delta",
         input.ekg_ischemic_changes && "Ischemic EKG changes",
         input.ongoing_chest_pain && "Ongoing cardiac chest pain",
       ].filter((x): x is string => Boolean(x));
 
       const fn = [
         input.ekg_ischemic_changes ? FOOTNOTES.A : null,
-        input.significant_delta ? FOOTNOTES.G : null,
+        significant_delta ? FOOTNOTES.G : null,
       ].filter((x): x is string => x !== null);
 
       return {
@@ -298,34 +348,45 @@ export const determineDisposition = tool({
 
     if (input.any_troponin_above_url) {
       return {
-        risk: "INTERMEDIATE",
-        disposition: DISPOSITIONS.INTERMEDIATE,
+        risk: "CHRONIC_INJURY",
+        disposition: DISPOSITIONS.CHRONIC_INJURY,
         rationale:
-          "Troponin at or above 99% URL without significant delta. Clinical correlation and observation required.",
+          "Troponin at or above 99% URL without significant delta — consistent with chronic myocardial injury. Evaluate etiology.",
         footnotes: [],
       };
     }
 
     if (
-      !input.significant_delta &&
+      !significant_delta &&
       !input.any_troponin_above_url &&
-      input.heart_score < 4 &&
-      (input.recent_normal_testing || input.chronic_unchanged_hst)
+      input.delta_range === "minimal" &&
+      input.symptom_duration_hours < 4
     ) {
-      if (input.chronic_unchanged_hst) {
-        return {
-          risk: "CHRONIC_INJURY",
-          disposition: DISPOSITIONS.CHRONIC_INJURY,
-          rationale:
-            "No significant delta with known chronic unchanged HST elevation.",
-          footnotes: [],
-        };
-      }
+      return {
+        risk: "PENDING",
+        disposition: DISPOSITIONS.PENDING_REPEAT,
+        rationale:
+          "Symptoms < 4 hours with minimal delta. Repeat HST and follow the pathway.",
+        footnotes: [FOOTNOTES.F],
+      };
+    }
+
+    if (
+      !significant_delta &&
+      !input.any_troponin_above_url &&
+      (input.recent_normal_testing || input.chronic_unchanged_hst || input.heart_score < 4)
+    ) {
+      const qualifiers = [
+        input.recent_normal_testing && "recent normal cardiac testing",
+        input.chronic_unchanged_hst && "known chronic unchanged HST elevation",
+        input.heart_score < 4 && `HEART Score ${input.heart_score} (<4)`,
+      ].filter((x): x is string => Boolean(x));
+
       return {
         risk: "LOW",
         disposition: DISPOSITIONS.LOW,
         rationale:
-          "No significant delta, below 99% URL, HEART <4, with recent normal testing.",
+          `No significant delta, below 99% URL, qualifying criteria: ${qualifiers.join(", ")}.`,
         recommendations: LOW_RISK_DISCHARGE_RECOMMENDATIONS,
         footnotes: [],
       };

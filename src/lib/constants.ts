@@ -3,6 +3,7 @@ export const TROPONIN_THRESHOLDS = {
   FEMALE_99_URL: 14,
   EARLY_RULE_OUT: 5,
   HIGH_PPV: 200,
+  INTERMEDIATE_DELTA_MIN: 4,
   SIGNIFICANT_DELTA_ABSOLUTE: 15,
   SIGNIFICANT_DELTA_PERCENT: 0.2,
   HIGH_VALUE_CUTOFF: 100,
@@ -33,4 +34,6 @@ export const DISPOSITIONS = {
   INTERMEDIATE: "Observation with additional testing.",
   CHRONIC_INJURY: "Evaluate etiology.",
   HIGH: "Admit.",
+  PENDING_4HR: "4-hour HST and repeat EKG required before disposition.",
+  PENDING_REPEAT: "Repeat HST required — symptoms < 4 hours.",
 } as const;

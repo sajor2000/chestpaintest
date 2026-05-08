@@ -274,6 +274,15 @@ describe("calculate_delta — PDF: Significant delta rules", () => {
     const r = await delta({ hst_0hr: 80, hst_current: 99, hour: "2" });
     expect(r.method).toContain("Absolute delta rule");
   });
+
+  // 20% rule replaces (not supplements) absolute threshold at high values
+  it("delta=15 but max_value≥100 → 20% rule applies, NOT absolute 15 threshold → intermediate", async () => {
+    const r = await delta({ hst_0hr: 90, hst_current: 105, hour: "2" });
+    expect(r.absolute_delta).toBe(15);
+    expect(r.method).toContain("20% change rule");
+    expect(r.significant).toBe(false);
+    expect(r.delta_category).toBe("intermediate");
+  });
 });
 
 // ============================================================
@@ -329,15 +338,16 @@ describe("calculate_heart_score — PDF: HEART Score", () => {
 
 const baseDispo = {
   any_troponin_above_url: false,
-  significant_delta: false,
   ekg_ischemic_changes: false,
   ongoing_chest_pain: false,
-  heart_score: 2,
+  heart_score: 5,
   symptom_duration_hours: 5,
   is_esrd: false,
   recent_normal_testing: false,
   chronic_unchanged_hst: false,
   early_rule_out: false,
+  delta_range: "minimal" as const,
+  has_4hr_result: false,
 };
 
 describe("determine_disposition — PDF: Early MI rule-out path", () => {
@@ -363,7 +373,7 @@ describe("determine_disposition — PDF: Early MI rule-out path", () => {
 describe("determine_disposition — PDF: High Risk paths", () => {
   // PDF High Risk box: "1. Significant delta"
   it("Significant delta alone → HIGH, admit", async () => {
-    const r = await dispo({ ...baseDispo, significant_delta: true });
+    const r = await dispo({ ...baseDispo, delta_range: "significant" as const });
     expect(r.risk).toBe("HIGH");
     expect(r.disposition).toContain("Admit");
   });
@@ -388,7 +398,7 @@ describe("determine_disposition — PDF: High Risk paths", () => {
     const r = await dispo({
       ...baseDispo,
       any_troponin_above_url: true,
-      significant_delta: true,
+      delta_range: "significant" as const,
     });
     expect(r.risk).toBe("HIGH");
     expect(r.disposition).toContain("Admit");
@@ -398,7 +408,7 @@ describe("determine_disposition — PDF: High Risk paths", () => {
   it("All high-risk features → HIGH", async () => {
     const r = await dispo({
       ...baseDispo,
-      significant_delta: true,
+      delta_range: "significant" as const,
       ekg_ischemic_changes: true,
       ongoing_chest_pain: true,
     });
@@ -411,11 +421,10 @@ describe("determine_disposition — PDF: High Risk paths", () => {
 
 describe("determine_disposition — PDF: Above URL without delta", () => {
   // PDF: "0 or 2hr ≥Sex Specific 99%URL" → "Significant delta NO" → "Chronic Injury"
-  // But only if chronic unchanged HST; otherwise intermediate
-  it("Above URL, no significant delta → INTERMEDIATE (observation)", async () => {
+  it("Above URL, no significant delta → CHRONIC_INJURY (evaluate etiology)", async () => {
     const r = await dispo({ ...baseDispo, any_troponin_above_url: true });
-    expect(r.risk).toBe("INTERMEDIATE");
-    expect(r.disposition).toContain("Observation");
+    expect(r.risk).toBe("CHRONIC_INJURY");
+    expect(r.disposition).toContain("Evaluate etiology");
   });
 });
 
@@ -436,38 +445,48 @@ describe("determine_disposition — PDF: Low Risk after 4hr path", () => {
     );
   });
 
-  it("No delta, below URL, HEART <4, chronic unchanged HST → CHRONIC_INJURY", async () => {
+  // PDF: "Chronic unchanged HST elevation" is a qualifying criterion for Low Risk
+  it("No delta, below URL, HEART <4, chronic unchanged HST → LOW", async () => {
     const r = await dispo({
       ...baseDispo,
       heart_score: 2,
       chronic_unchanged_hst: true,
     });
-    expect(r.risk).toBe("CHRONIC_INJURY");
-    expect(r.disposition).toContain("Evaluate etiology");
+    expect(r.risk).toBe("LOW");
+    expect(r.disposition).toContain("Discharge");
   });
 
-  // HEART ≥ 4 blocks the low-risk path even with recent normal testing
-  it("No delta, below URL, HEART = 4, recent normal testing → INTERMEDIATE (not low)", async () => {
+  // PDF: "Recent normal testing" qualifies for Low Risk even with HEART ≥4
+  it("No delta, below URL, HEART = 4, recent normal testing → LOW", async () => {
     const r = await dispo({
       ...baseDispo,
       heart_score: 4,
       recent_normal_testing: true,
     });
-    expect(r.risk).toBe("INTERMEDIATE");
+    expect(r.risk).toBe("LOW");
+  });
+
+  // PDF: HEART <4 alone qualifies for Low Risk (any of the three criteria)
+  it("No delta, below URL, HEART <4, no testing, no chronic → LOW", async () => {
+    const r = await dispo({
+      ...baseDispo,
+      heart_score: 3,
+    });
+    expect(r.risk).toBe("LOW");
   });
 });
 
 describe("determine_disposition — PDF: Intermediate Risk", () => {
   // PDF: "Not meeting criteria for low or high risk"
-  it("No high-risk features, no low-risk criteria → INTERMEDIATE", async () => {
+  // baseDispo has heart_score=5 (≥4), no testing, no chronic → no low-risk qualifier
+  it("No high-risk features, HEART ≥4, no low-risk criteria → INTERMEDIATE", async () => {
     const r = await dispo(baseDispo);
     expect(r.risk).toBe("INTERMEDIATE");
     expect(r.disposition).toContain("Observation");
   });
 
-  // Below URL, delta not significant, HEART ≥4, no recent testing
   it("HEART ≥4, no recent testing, no chronic → INTERMEDIATE", async () => {
-    const r = await dispo({ ...baseDispo, heart_score: 5 });
+    const r = await dispo({ ...baseDispo, heart_score: 6 });
     expect(r.risk).toBe("INTERMEDIATE");
   });
 });
@@ -491,16 +510,16 @@ describe("determine_disposition — PDF: Disposition text matches", () => {
   });
 
   it("CHRONIC_INJURY → 'Evaluate etiology'", async () => {
+    // PDF: above URL + no significant delta → Chronic Injury
     const r = await dispo({
       ...baseDispo,
-      heart_score: 2,
-      chronic_unchanged_hst: true,
+      any_troponin_above_url: true,
     });
     expect(r.disposition).toBe("Evaluate etiology.");
   });
 
   it("HIGH → 'Admit'", async () => {
-    const r = await dispo({ ...baseDispo, significant_delta: true });
+    const r = await dispo({ ...baseDispo, delta_range: "significant" as const });
     expect(r.disposition).toBe("Admit.");
   });
 });
@@ -521,11 +540,12 @@ describe("Full pathway scenarios against PDF flowchart", () => {
     expect(tropR.above_url).toBe(false);
 
     const dispoR = await dispo({
-      any_troponin_above_url: false, significant_delta: false,
+      any_troponin_above_url: false,
       ekg_ischemic_changes: false, ongoing_chest_pain: false,
       heart_score: 1, symptom_duration_hours: 4, is_esrd: false,
       recent_normal_testing: false, chronic_unchanged_hst: false,
       early_rule_out: true,
+      delta_range: "minimal" as const, has_4hr_result: false,
     });
     expect(dispoR.risk).toBe("LOW");
     expect(dispoR.disposition).toContain("Discharge");
@@ -547,11 +567,12 @@ describe("Full pathway scenarios against PDF flowchart", () => {
     expect(deltaR.direction).toBe("rising");
 
     const dispoR = await dispo({
-      any_troponin_above_url: true, significant_delta: true,
+      any_troponin_above_url: true,
       ekg_ischemic_changes: true, ongoing_chest_pain: false,
       heart_score: 6, symptom_duration_hours: 2, is_esrd: false,
       recent_normal_testing: false, chronic_unchanged_hst: false,
       early_rule_out: false,
+      delta_range: "significant" as const, has_4hr_result: false,
     });
     expect(dispoR.risk).toBe("HIGH");
     expect(dispoR.disposition).toBe("Admit.");
@@ -571,11 +592,12 @@ describe("Full pathway scenarios against PDF flowchart", () => {
 
     // Not meeting low (no recent testing, HEART ≥ 4) or high → INTERMEDIATE
     const dispoR = await dispo({
-      any_troponin_above_url: false, significant_delta: false,
+      any_troponin_above_url: false,
       ekg_ischemic_changes: false, ongoing_chest_pain: false,
       heart_score: 4, symptom_duration_hours: 2, is_esrd: false,
       recent_normal_testing: false, chronic_unchanged_hst: false,
       early_rule_out: false,
+      delta_range: "intermediate" as const, has_4hr_result: true,
     });
     expect(dispoR.risk).toBe("INTERMEDIATE");
   });
@@ -594,7 +616,6 @@ describe("Full pathway scenarios against PDF flowchart", () => {
     expect(tropR.early_rule_out_eligible).toBe(false);
     expect(tropR.flags.some((f: string) => f.includes("ESRD"))).toBe(true);
 
-    // Even if LLM erroneously passes early_rule_out=true
     const dispoR = await dispo({
       ...baseDispo,
       is_esrd: true,
@@ -603,16 +624,17 @@ describe("Full pathway scenarios against PDF flowchart", () => {
     expect(dispoR.risk).not.toBe("LOW");
   });
 
-  it("Scenario 6: Chronic unchanged HST, no delta, HEART <4 → Chronic Injury", async () => {
+  it("Scenario 6: Chronic unchanged HST below URL, no delta, HEART <4 → Low Risk (PDF qualifying criterion)", async () => {
     const dispoR = await dispo({
-      any_troponin_above_url: false, significant_delta: false,
+      any_troponin_above_url: false,
       ekg_ischemic_changes: false, ongoing_chest_pain: false,
       heart_score: 2, symptom_duration_hours: 6, is_esrd: false,
       recent_normal_testing: false, chronic_unchanged_hst: true,
       early_rule_out: false,
+      delta_range: "minimal" as const, has_4hr_result: false,
     });
-    expect(dispoR.risk).toBe("CHRONIC_INJURY");
-    expect(dispoR.disposition).toBe("Evaluate etiology.");
+    expect(dispoR.risk).toBe("LOW");
+    expect(dispoR.disposition).toContain("Discharge");
   });
 
   it("Scenario 7: High-value troponin using 20% rule — 0hr=120, 2hr=150", async () => {
@@ -622,24 +644,167 @@ describe("Full pathway scenarios against PDF flowchart", () => {
     expect(deltaR.method).toContain("20%");
 
     const dispoR = await dispo({
-      any_troponin_above_url: true, significant_delta: true,
+      any_troponin_above_url: true,
       ekg_ischemic_changes: false, ongoing_chest_pain: false,
       heart_score: 5, symptom_duration_hours: 3, is_esrd: false,
       recent_normal_testing: false, chronic_unchanged_hst: false,
       early_rule_out: false,
+      delta_range: "significant" as const, has_4hr_result: false,
     });
     expect(dispoR.risk).toBe("HIGH");
   });
 
-  it("Scenario 8: PDF right branch — above URL, no significant delta, no chronic → INTERMEDIATE", async () => {
-    // PDF: "0 or 2hr ≥Sex Specific 99%URL" → "Significant delta NO" → if not chronic → should be intermediate
+  it("Scenario 8: PDF right branch — above URL, no significant delta → CHRONIC_INJURY", async () => {
+    // PDF: "0 or 2hr ≥Sex Specific 99%URL" → "Significant delta NO" → "Chronic Injury"
     const dispoR = await dispo({
-      any_troponin_above_url: true, significant_delta: false,
+      any_troponin_above_url: true,
       ekg_ischemic_changes: false, ongoing_chest_pain: false,
       heart_score: 3, symptom_duration_hours: 5, is_esrd: false,
       recent_normal_testing: false, chronic_unchanged_hst: false,
       early_rule_out: false,
+      delta_range: "minimal" as const, has_4hr_result: false,
     });
-    expect(dispoR.risk).toBe("INTERMEDIATE");
+    expect(dispoR.risk).toBe("CHRONIC_INJURY");
+    expect(dispoR.disposition).toContain("Evaluate etiology");
+  });
+});
+
+// ============================================================
+// PDF: Delta category — minimal / intermediate / significant
+// ============================================================
+describe("calculate_delta — PDF: Delta category (3-lane routing)", () => {
+  it("Delta = 3 → minimal, no 4hr HST needed", async () => {
+    const r = await delta({ hst_0hr: 10, hst_current: 13, hour: "2" });
+    expect(r.delta_category).toBe("minimal");
+    expect(r.needs_4hr_hst).toBe(false);
+  });
+
+  it("Delta = 4 → intermediate, 4hr HST needed", async () => {
+    const r = await delta({ hst_0hr: 10, hst_current: 14, hour: "2" });
+    expect(r.delta_category).toBe("intermediate");
+    expect(r.needs_4hr_hst).toBe(true);
+    expect(r.message).toContain("4-hour HST");
+  });
+
+  it("Delta = 10 → intermediate, 4hr HST needed", async () => {
+    const r = await delta({ hst_0hr: 8, hst_current: 18, hour: "2" });
+    expect(r.delta_category).toBe("intermediate");
+    expect(r.needs_4hr_hst).toBe(true);
+  });
+
+  it("Delta = 14 → intermediate (boundary)", async () => {
+    const r = await delta({ hst_0hr: 10, hst_current: 24, hour: "2" });
+    expect(r.delta_category).toBe("intermediate");
+    expect(r.needs_4hr_hst).toBe(true);
+  });
+
+  it("Delta = 15 → significant, no 4hr HST needed", async () => {
+    const r = await delta({ hst_0hr: 10, hst_current: 25, hour: "2" });
+    expect(r.delta_category).toBe("significant");
+    expect(r.needs_4hr_hst).toBe(false);
+  });
+
+  it("Delta = 0 → minimal", async () => {
+    const r = await delta({ hst_0hr: 20, hst_current: 20, hour: "2" });
+    expect(r.delta_category).toBe("minimal");
+    expect(r.needs_4hr_hst).toBe(false);
+  });
+});
+
+// ============================================================
+// PDF: PENDING_4HR — delta 4-14, no 4hr draw yet
+// ============================================================
+describe("determine_disposition — PDF: PENDING_4HR for intermediate delta", () => {
+  it("Delta range intermediate, no 4hr result, below URL → PENDING_4HR", async () => {
+    const r = await dispo({
+      ...baseDispo,
+      delta_range: "intermediate" as const,
+      has_4hr_result: false,
+    });
+    expect(r.risk).toBe("PENDING");
+    expect(r.disposition).toContain("4-hour HST");
+    expect(r.footnotes).toContain("The change in delta can be in either direction. Declining HST can be indicative of recent MI.");
+  });
+
+  it("Delta range intermediate, 4hr result obtained, no high-risk → proceeds to INTERMEDIATE", async () => {
+    const r = await dispo({
+      ...baseDispo,
+      delta_range: "intermediate" as const,
+      has_4hr_result: true,
+    });
+    expect(r.risk).toBe("INTERMEDIATE");
+  });
+
+  it("Delta range intermediate, 4hr result obtained, HEART <4 + recent testing → LOW", async () => {
+    const r = await dispo({
+      ...baseDispo,
+      delta_range: "intermediate" as const,
+      has_4hr_result: true,
+      heart_score: 2,
+      recent_normal_testing: true,
+    });
+    expect(r.risk).toBe("LOW");
+  });
+
+  it("Delta range intermediate + above URL → skips PENDING_4HR (right branch handles it)", async () => {
+    const r = await dispo({
+      ...baseDispo,
+      delta_range: "intermediate" as const,
+      has_4hr_result: false,
+      any_troponin_above_url: true,
+    });
+    expect(r.risk).toBe("CHRONIC_INJURY");
+  });
+});
+
+// ============================================================
+// PDF Footnote F: Sx <4hr → repeat HST and follow pathway
+// ============================================================
+describe("determine_disposition — PDF Footnote F: Sx <4hr guard", () => {
+  it("Below URL, minimal delta, Sx = 2hr → PENDING_REPEAT with Footnote F", async () => {
+    const r = await dispo({
+      ...baseDispo,
+      symptom_duration_hours: 2,
+      delta_range: "minimal" as const,
+    });
+    expect(r.risk).toBe("PENDING");
+    expect(r.disposition).toContain("Repeat HST");
+    expect(r.footnotes).toContain("Sx <4hr → repeat HST and follow pathway.");
+  });
+
+  it("Below URL, minimal delta, Sx = 3.9hr → PENDING_REPEAT", async () => {
+    const r = await dispo({
+      ...baseDispo,
+      symptom_duration_hours: 3.9,
+      delta_range: "minimal" as const,
+    });
+    expect(r.risk).toBe("PENDING");
+  });
+
+  it("Below URL, minimal delta, Sx = 4hr → proceeds normally (not blocked)", async () => {
+    const r = await dispo({
+      ...baseDispo,
+      symptom_duration_hours: 4,
+      delta_range: "minimal" as const,
+    });
+    expect(r.risk).not.toBe("PENDING");
+  });
+
+  it("Below URL, minimal delta, Sx = 5hr → proceeds to normal disposition", async () => {
+    const r = await dispo({
+      ...baseDispo,
+      symptom_duration_hours: 5,
+      delta_range: "minimal" as const,
+    });
+    expect(r.risk).toBe("INTERMEDIATE");
+  });
+
+  it("Sx <4hr but significant delta → HIGH (not blocked by Footnote F)", async () => {
+    const r = await dispo({
+      ...baseDispo,
+      symptom_duration_hours: 2,
+      delta_range: "significant" as const,
+    });
+    expect(r.risk).toBe("HIGH");
   });
 });
