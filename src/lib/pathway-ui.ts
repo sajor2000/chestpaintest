@@ -60,8 +60,16 @@ export function normalizeQuickReplyOptions(
   toolOptions: string[]
 ): string[] {
   const question = lastTextBlock.trim();
-  const matchedRule = QUICK_REPLY_RULES.find((rule) => rule.match.test(question));
-  if (matchedRule) return matchedRule.options;
+  let bestRule: (typeof QUICK_REPLY_RULES)[number] | null = null;
+  let bestPos = -1;
+  for (const rule of QUICK_REPLY_RULES) {
+    const m = rule.match.exec(question);
+    if (m && m.index > bestPos) {
+      bestPos = m.index;
+      bestRule = rule;
+    }
+  }
+  if (bestRule) return bestRule.options;
   return toolOptions;
 }
 

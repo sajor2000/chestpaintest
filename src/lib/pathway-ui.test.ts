@@ -20,6 +20,24 @@ describe("normalizeQuickReplyOptions", () => {
     ).toEqual(["Male", "Female"]);
   });
 
+  it("picks the latest match when text mentions STEMI then asks about sex", () => {
+    expect(
+      normalizeQuickReplyOptions(
+        "No STEMI identified. What is the patient's sex?",
+        ["Male", "Female"]
+      )
+    ).toEqual(["Male", "Female"]);
+  });
+
+  it("picks the latest match when text mentions ischemic then asks about ESRD", () => {
+    expect(
+      normalizeQuickReplyOptions(
+        "No ischemic changes noted. Does the patient have ESRD?",
+        ["Yes", "No"]
+      )
+    ).toEqual(["Yes - ESRD", "No ESRD"]);
+  });
+
   it("uses pathway-specific choices for common yes/no questions", () => {
     expect(
       normalizeQuickReplyOptions("Any ischemic ST or T-wave changes?", [
