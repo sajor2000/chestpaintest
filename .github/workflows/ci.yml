@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    name: test (3.11)
+    runs-on: ubuntu-latest
+
+    env:
+      CDS_AZURE_KEY: ci-placeholder
+      CDS_AZURE_ENDPOINT: https://example.openai.azure.com/openai/deployments
+      CDS_AZURE_DEPLOYMENT: gpt-4.1-mini
+      CDS_AZURE_API_VERSION: 2025-01-01-preview
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npx vitest run
+
+      - name: Build
+        run: npm run build
+
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev
