@@ -13,7 +13,7 @@ The chatbot walks the physician through the pathway step by step:
 5. **HEART Score** — 5-component scoring with risk stratification
 6. **Disposition** — Low (discharge) / Intermediate (observation) / Chronic Injury / High (admit)
 
-**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions with 61 pathway tests verified against the source PDF.
+**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions with 69 tests, including 61 pathway tests verified against the source PDF.
 
 ## Features
 
@@ -32,7 +32,7 @@ The chatbot walks the physician through the pathway step by step:
 | AI SDK | Vercel AI SDK v6 (`@ai-sdk/azure`, `@ai-sdk/react`) |
 | LLM | Azure OpenAI GPT-4.1-mini (Chat Completions API) |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest (61 pathway tests) |
+| Testing | Vitest (69 tests; 61 deterministic pathway tests) |
 | FHIR | SMART on FHIR scaffold; add `fhirclient` during Phase 2 Epic integration |
 
 ## Setup
@@ -80,7 +80,7 @@ Use `.env.example` as the template. Do not commit `.env.local`.
 npx vitest run
 ```
 
-61 tests verify every decision node from the Rush hs-TnI pathway PDF:
+69 tests cover the pathway logic, request sanitization, route guard, and pathway UI workflow. The 61 deterministic pathway tests verify every decision node from the Rush hs-TnI pathway PDF:
 - STEMI/EQV diamond routing
 - 99% URL thresholds (boundary values)
 - Early MI rule-out (all 6 gate conditions)
@@ -112,6 +112,9 @@ src/
     azure.ts             # Azure OpenAI provider config
   __tests__/
     pathway.test.ts      # 61 tests against PDF source of truth
+    route.test.ts        # /api/chat request-size guard
+    chat-request.test.ts # browser message sanitization
+    pathway-ui.test.ts   # pathway step and quick-reply normalization
 ```
 
 ## Safety
@@ -119,7 +122,7 @@ src/
 - 6 critical safety rules in the system prompt prevent the LLM from fabricating clinical decisions
 - All clinical logic runs in deterministic, tested tool functions
 - ESRD guard blocks early rule-out at both troponin evaluation and disposition levels
-- Input validation: message role filtering, body size limits, MIME allowlist for images
+- Input validation: message role filtering, a 2 MB `/api/chat` Content-Length guard, and MIME allowlist for images
 - ECG image interpretation requires explicit physician confirmation before entering the pathway
 
 ## Roadmap

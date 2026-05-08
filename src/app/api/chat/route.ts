@@ -3,7 +3,7 @@ import {
   convertToModelMessages,
   stepCountIs,
 } from "ai";
-import { model } from "@/lib/azure";
+import { getModel } from "@/lib/azure";
 import {
   RequestValidationError,
   sanitizeClientMessages,
@@ -18,7 +18,19 @@ import {
   suggestFollowups,
 } from "@/lib/tools";
 
+const MAX_CHAT_REQUEST_BODY_BYTES = 2_000_000;
+
 export async function POST(req: Request) {
+  const contentLength = Number(req.headers.get("content-length"));
+  if (
+    Number.isFinite(contentLength) &&
+    contentLength > MAX_CHAT_REQUEST_BODY_BYTES
+  ) {
+    return new Response(JSON.stringify({ error: "Request body too large" }), {
+      status: 413,
+    });
+  }
+
   let body: { messages?: unknown };
   try {
     body = await req.json();
@@ -48,7 +60,7 @@ export async function POST(req: Request) {
   }
 
   const result = streamText({
-    model,
+    model: getModel(),
     system: SYSTEM_PROMPT,
     messages: await convertToModelMessages(messages),
     stopWhen: stepCountIs(10),

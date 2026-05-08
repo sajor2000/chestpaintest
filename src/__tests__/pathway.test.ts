@@ -347,6 +347,9 @@ describe("determine_disposition — PDF: Early MI rule-out path", () => {
     expect(r.risk).toBe("LOW");
     expect(r.disposition).toContain("Discharge");
     expect(r.footnotes).toContain("NPV for MI is 99.5%.");
+    expect(r.recommendations).toContain(
+      "Review return precautions for recurrent, worsening, or persistent chest pain."
+    );
   });
 
   // PDF Footnote C: ESRD blocks early rule-out
@@ -428,6 +431,9 @@ describe("determine_disposition — PDF: Low Risk after 4hr path", () => {
     });
     expect(r.risk).toBe("LOW");
     expect(r.disposition).toContain("Discharge");
+    expect(r.recommendations).toContain(
+      "Arrange outpatient follow-up according to local chest pain pathway practice."
+    );
   });
 
   it("No delta, below URL, HEART <4, chronic unchanged HST → CHRONIC_INJURY", async () => {

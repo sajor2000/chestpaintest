@@ -30,7 +30,7 @@ Use this checklist before any public demo, clinical pilot, or production deploy.
 - [ ] Confirm Azure OpenAI deployment name and API version match the configured production resource.
 - [ ] Confirm all four `CDS_AZURE_*` variables from `.env.example` are configured in Vercel for the target environment.
 - [ ] Confirm no secrets are committed; `.env*` files must remain ignored.
-- [ ] Confirm request body limits are enforced by the deployment host or an explicit app-level guard.
+- [ ] Confirm the `/api/chat` 2 MB `Content-Length` guard is active and that the deployment host also enforces appropriate request body limits.
 - [ ] Confirm build output does not warn about an unintended workspace root. If it does, configure `turbopack.root` or remove the extra parent lockfile.
 
 ## Known Release Blockers To Clear
@@ -38,3 +38,4 @@ Use this checklist before any public demo, clinical pilot, or production deploy.
 - [ ] Resolve any runtime dependency audit findings before production use.
 - [ ] Complete SMART on FHIR authentication before Epic-embedded use.
 - [ ] Add persistence and audit trail before relying on the app for durable clinical documentation.
+- [ ] Replace inferred UI pathway state with a server-owned pathway session model before high-stakes clinical use.

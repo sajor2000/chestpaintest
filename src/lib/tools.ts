@@ -169,6 +169,13 @@ export const calculateDelta = tool({
 
 const heartComponent = z.union([z.literal(0), z.literal(1), z.literal(2)]);
 
+const LOW_RISK_DISCHARGE_RECOMMENDATIONS = [
+  "Discharge with follow-up if the treating physician agrees the full pathway criteria are met.",
+  "Review return precautions for recurrent, worsening, or persistent chest pain.",
+  "Arrange outpatient follow-up according to local chest pain pathway practice.",
+  "Document the low-risk pathway criteria, shared decision-making, and follow-up plan.",
+];
+
 export const calculateHeartScore = tool({
   description:
     "Calculate the HEART score from its 5 components. Each component is scored 0, 1, or 2.",
@@ -250,6 +257,7 @@ export const determineDisposition = tool({
         disposition: DISPOSITIONS.LOW,
         rationale:
           "Early MI rule-out met: HST <5 ng/L, symptoms >3hr, low clinical suspicion. NPV 99.5%.",
+        recommendations: LOW_RISK_DISCHARGE_RECOMMENDATIONS,
         footnotes: [FOOTNOTES.B],
       };
     }
@@ -318,6 +326,7 @@ export const determineDisposition = tool({
         disposition: DISPOSITIONS.LOW,
         rationale:
           "No significant delta, below 99% URL, HEART <4, with recent normal testing.",
+        recommendations: LOW_RISK_DISCHARGE_RECOMMENDATIONS,
         footnotes: [],
       };
     }
