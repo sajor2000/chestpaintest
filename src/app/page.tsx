@@ -439,7 +439,6 @@ export default function Chat() {
           </div>
         )}
         {messages.map((msg) => {
-          const visibleQuestion = getMessageText(msg);
           return (
             <div
               key={msg.id}
@@ -482,8 +481,13 @@ export default function Chat() {
                   const tp = part as ToolPart;
                   const opts = tp.output?.options;
                   if (!Array.isArray(opts) || opts.length === 0) return null;
+                  const lastText = [...msg.parts]
+                    .slice(0, i)
+                    .filter((p) => p.type === "text")
+                    .pop();
+                  const questionText = lastText && "text" in lastText ? lastText.text : "";
                   const replyOptions = normalizeQuickReplyOptions(
-                    visibleQuestion,
+                    questionText,
                     opts as string[]
                   );
                   const isLast = msg.id === messages[messages.length - 1]?.id;

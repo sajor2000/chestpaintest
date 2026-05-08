@@ -56,10 +56,10 @@ const QUICK_REPLY_RULES: Array<{
 ];
 
 export function normalizeQuickReplyOptions(
-  visibleQuestion: string,
+  lastTextBlock: string,
   toolOptions: string[]
 ): string[] {
-  const question = visibleQuestion.trim();
+  const question = lastTextBlock.trim();
   const matchedRule = QUICK_REPLY_RULES.find((rule) => rule.match.test(question));
   if (matchedRule) return matchedRule.options;
   return toolOptions;
