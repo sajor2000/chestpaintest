@@ -4,6 +4,12 @@ import { useChat } from "@ai-sdk/react";
 import Image from "next/image";
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { FileUIPart } from "ai";
+import {
+  getPathwayStep,
+  normalizeQuickReplyOptions,
+  PATHWAY_STEPS,
+  type PathwayStepId,
+} from "@/lib/pathway-ui";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_IMAGE_BYTES = 1024 * 1024; // 1 MB
@@ -57,6 +63,67 @@ function RiskCard({ data }: { data: Record<string, unknown> }) {
 
 type ToolPart = { type: string; state?: string; output?: Record<string, unknown> };
 
+type ChatMessage = ReturnType<typeof useChat>["messages"][number];
+
+function getMessageText(msg: ChatMessage): string {
+  return msg.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+}
+
+function PathwayRail({ activeStep }: { activeStep: PathwayStepId }) {
+  const activeIndex = PATHWAY_STEPS.findIndex((step) => step.id === activeStep);
+
+  return (
+    <nav
+      aria-label="hs-TnI pathway progress"
+      className="bg-white border-b border-gray-200 px-4 py-2.5 overflow-x-auto shrink-0"
+    >
+      <ol className="flex min-w-max items-center gap-2">
+        {PATHWAY_STEPS.map((step, index) => {
+          const isActive = step.id === activeStep;
+          const isComplete = index < activeIndex;
+          return (
+            <li key={step.id} className="flex items-center gap-2">
+              <div
+                className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 ${
+                  isActive
+                    ? "border-[#006332] bg-[#e8f5ee] text-[#004d27]"
+                    : isComplete
+                      ? "border-[#006332]/25 bg-white text-[#006332]"
+                      : "border-gray-200 bg-white text-[#6b6b6b]"
+                }`}
+              >
+                <span
+                  className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${
+                    isActive
+                      ? "bg-[#006332] text-white"
+                      : isComplete
+                        ? "bg-[#006332]/10 text-[#006332]"
+                        : "bg-gray-100 text-[#6b6b6b]"
+                  }`}
+                >
+                  {index + 1}
+                </span>
+                <span className="text-xs font-semibold">{step.label}</span>
+                {isActive && (
+                  <span className="hidden text-[11px] text-[#494949] sm:inline">
+                    {step.detail}
+                  </span>
+                )}
+              </div>
+              {index < PATHWAY_STEPS.length - 1 && (
+                <div className="h-px w-4 bg-gray-200" aria-hidden="true" />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
 function ToolResult({ part }: { part: ToolPart }) {
   const data = part.output;
   if (!data) return null;
@@ -100,6 +167,13 @@ export default function Chat() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { messages, sendMessage, status } = useChat();
   const isLoading = status === "streaming" || status === "submitted";
+  const latestAssistantMessage = [...messages]
+    .reverse()
+    .find((msg) => msg.role === "assistant");
+  const latestAssistantText = latestAssistantMessage
+    ? getMessageText(latestAssistantMessage)
+    : "";
+  const activeStep = getPathwayStep(latestAssistantText);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -166,6 +240,8 @@ export default function Chat() {
       {/* Gold accent line */}
       <div className="h-[3px] bg-[#c8902e] shrink-0" />
 
+      <PathwayRail activeStep={activeStep} />
+
       {/* Collapsible pathway reference */}
       {showPathway && (
         <div className="border-b border-gray-200 bg-white overflow-auto max-h-[50vh] shrink-0">
@@ -183,7 +259,7 @@ export default function Chat() {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {messages.length === 0 && (
-          <div className="text-center mt-16 space-y-3">
+          <div className="text-center mt-12 space-y-4">
             <div className="w-14 h-14 rounded-2xl bg-[#006332]/10 flex items-center justify-center mx-auto">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#006332" strokeWidth="1.5">
                 <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
@@ -196,13 +272,33 @@ export default function Chat() {
             <p className="text-xs text-[#494949]/60">
               Type &ldquo;start&rdquo; or describe your patient&rsquo;s EKG findings.
             </p>
+            <div className="flex flex-wrap justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => sendMessage({ text: "Start the Rush hs-TnI pathway." })}
+                disabled={isLoading}
+                className="rounded-md bg-[#006332] px-4 py-2 text-xs font-semibold text-white hover:bg-[#004d27] disabled:opacity-40"
+              >
+                Start pathway
+              </button>
+              <button
+                type="button"
+                onClick={() => sendMessage({ text: "No STEMI. No ischemic ST or T-wave changes." })}
+                disabled={isLoading}
+                className="rounded-md border border-[#006332] bg-white px-4 py-2 text-xs font-semibold text-[#006332] hover:bg-[#e8f5ee] disabled:opacity-40"
+              >
+                No STEMI or ischemic changes
+              </button>
+            </div>
           </div>
         )}
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
+        {messages.map((msg) => {
+          const visibleQuestion = getMessageText(msg);
+          return (
+            <div
+              key={msg.id}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
             <div
               className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[14px] leading-relaxed ${
                 msg.role === "user"
@@ -240,10 +336,14 @@ export default function Chat() {
                   const tp = part as ToolPart;
                   const opts = tp.output?.options;
                   if (!Array.isArray(opts) || opts.length === 0) return null;
+                  const replyOptions = normalizeQuickReplyOptions(
+                    visibleQuestion,
+                    opts as string[]
+                  );
                   const isLast = msg.id === messages[messages.length - 1]?.id;
                   return (
                     <div key={`${msg.id}-${i}`} className="flex flex-wrap gap-2 mt-2">
-                      {(opts as string[]).map((opt) => (
+                      {replyOptions.map((opt) => (
                         <button
                           key={opt}
                           disabled={!isLast || isLoading}
@@ -275,7 +375,8 @@ export default function Chat() {
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
         {isLoading && (
           <div className="flex justify-start">
             <div className="bg-white shadow-sm border border-gray-100 rounded-2xl px-4 py-3 flex gap-1.5">
