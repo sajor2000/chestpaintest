@@ -163,7 +163,7 @@ function isFreeTextSymptomTimingPrompt(text: string) {
 }
 
 function isFinalDispositionText(text: string) {
-  return /low-risk discharge pathway confirmed|final risk|discharge with follow-up|admit|observation recommended/i.test(
+  return /low-risk discharge pathway confirmed|final risk|discharge with follow-up|admit|observation recommended|stemi pathway|activate (?:the )?stemi pathway|pathway stops here/i.test(
     text
   );
 }

@@ -174,6 +174,15 @@ describe("normalizeQuickReplyOptions", () => {
     ).toEqual([]);
   });
 
+  it("suppresses fallback buttons after a terminal STEMI pathway result", () => {
+    expect(
+      normalizeQuickReplyOptions(
+        "STEMI or equivalent identified. Activate the STEMI pathway immediately. The Rush hs-TnI pathway stops here.",
+        []
+      )
+    ).toEqual([]);
+  });
+
   it("multiple prior mentions then ongoing chest pain question → pain buttons", () => {
     expect(
       normalizeQuickReplyOptions(

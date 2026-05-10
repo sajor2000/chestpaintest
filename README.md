@@ -13,7 +13,7 @@ The chatbot walks the physician through the pathway step by step:
 5. **HEART Score** — LLM-guided 5-component scoring with visual breakdown card
 6. **Disposition** — Low (discharge) / Intermediate (observation) / Chronic Injury / High (admit) / Pending (4hr or repeat HST required)
 
-**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions. The current suite has 177 tests, including 87 pathway tool tests plus a 30-case original decision-tree audit that exercises the major Rush hs-TnI branches end to end.
+**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions. The current suite has 178 tests, including 87 pathway tool tests plus a 30-case original decision-tree audit that exercises the major Rush hs-TnI branches end to end.
 
 ## Features
 
@@ -37,7 +37,7 @@ The chatbot walks the physician through the pathway step by step:
 | AI SDK | Vercel AI SDK v6 (`@ai-sdk/azure`, `@ai-sdk/react`) |
 | LLM | Azure OpenAI GPT-4.1-mini (Chat Completions API) |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest (177 tests; 87 pathway tool tests; 30-case decision-tree audit) |
+| Testing | Vitest (178 tests; 87 pathway tool tests; 30-case decision-tree audit) |
 | FHIR | SMART on FHIR scaffold; add `fhirclient` during Phase 2 Epic integration |
 
 ## Setup
@@ -85,7 +85,7 @@ Use `.env.example` as the template. Do not commit `.env.local`.
 npx vitest run
 ```
 
-177 tests cover the pathway logic, 30-case original decision-tree audit, request sanitization, route guard, prompt-backed pathway state guardrails, system-prompt safety framing, and pathway UI workflow. The pathway tests verify the Rush hs-TnI pathway PDF branches and boundary values:
+178 tests cover the pathway logic, 30-case original decision-tree audit, request sanitization, route guard, prompt-backed pathway state guardrails, system-prompt safety framing, and pathway UI workflow. The pathway tests verify the Rush hs-TnI pathway PDF branches and boundary values:
 - STEMI/EQV diamond routing
 - 99% URL thresholds (boundary values)
 - Early MI rule-out (all 6 gate conditions)
