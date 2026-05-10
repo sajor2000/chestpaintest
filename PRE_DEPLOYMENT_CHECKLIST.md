@@ -12,6 +12,8 @@ Use this checklist before any public demo, clinical pilot, or production deploy.
   - `CDS_AZURE_API_VERSION`
 - [ ] Run `npm run lint` and resolve all errors.
 - [ ] Run `npx vitest run` and confirm all tests pass.
+- [ ] Run `npx vitest run src/__tests__/pathway-decision-tree-30.test.ts` and confirm all 30 original decision-tree cases pass.
+- [ ] Run `npx vitest run src/lib/pathway-state.test.ts src/lib/chat-route.test.ts src/lib/system-prompt.test.ts` and confirm parser, route, and prompt guardrails pass.
 - [ ] Run `npm run build` and confirm TypeScript and production build pass.
 - [ ] Run `npm audit --omit=dev` and review any runtime dependency advisories.
 
@@ -19,9 +21,12 @@ Use this checklist before any public demo, clinical pilot, or production deploy.
 
 - [ ] Confirm the Rush hs-TnI source pathway image in `public/troponin-pathway.png` matches the clinical source of truth.
 - [ ] Confirm deterministic tool tests cover pathway thresholds, deltas, HEART score, ESRD guard, early rule-out, and dispositions.
+- [ ] Confirm the 30-case decision-tree audit covers STEMI, ischemic EKG, early rule-out, ESRD, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain.
+- [ ] Confirm prompt-backed pathway state tests cover latest clinician correction precedence and HEART false-positive parsing guards.
 - [ ] Confirm `/api/chat` accepts only user-owned text and valid ECG image data from the browser.
 - [ ] Confirm final disposition text includes the treating-physician judgment disclaimer.
 - [ ] Confirm ECG image interpretation remains MD-confirmed before pathway tool calls.
+- [ ] Manually run at least three Vercel preview flows: early rule-out low-risk, intermediate delta needing 4hr HST, and high-risk from ischemic EKG or significant delta.
 
 ## Deployment Environment Gate
 
@@ -38,4 +43,4 @@ Use this checklist before any public demo, clinical pilot, or production deploy.
 - [ ] Resolve any runtime dependency audit findings before production use.
 - [ ] Complete SMART on FHIR authentication before Epic-embedded use.
 - [ ] Add persistence and audit trail before relying on the app for durable clinical documentation.
-- [ ] Replace inferred UI pathway state with a server-owned pathway session model before high-stakes clinical use.
+- [ ] Replace prompt-backed pathway state guidance and inferred UI pathway state with a deterministic server-owned pathway session controller before high-stakes clinical use.

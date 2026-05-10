@@ -13,7 +13,7 @@ The chatbot walks the physician through the pathway step by step:
 5. **HEART Score** — LLM-guided 5-component scoring with visual breakdown card
 6. **Disposition** — Low (discharge) / Intermediate (observation) / Chronic Injury / High (admit) / Pending (4hr or repeat HST required)
 
-**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions with 131 tests, including 87 tests verified node-by-node against the source PDF.
+**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions. The current suite has 177 tests, including 87 pathway tool tests plus a 30-case original decision-tree audit that exercises the major Rush hs-TnI branches end to end.
 
 ## Features
 
@@ -25,6 +25,7 @@ The chatbot walks the physician through the pathway step by step:
 - **Pathway diagram** toggleable in the header for reference during assessment
 - **Risk cards** color-coded by disposition (green/amber/orange/red)
 - **PENDING dispositions** — intermediate delta (4–14) blocks disposition until 4hr HST obtained; symptoms <4hr require repeat HST (Footnote F)
+- **Prompt-backed pathway state guardrail** — the API parses clinician-provided pathway fields, prefers later corrections, and tells the model not to re-ask for accepted fields
 - **SMART on FHIR scaffold** for future Epic Hyperspace embedding
 - **Rush branding** matching rush.edu colors and design
 
@@ -36,7 +37,7 @@ The chatbot walks the physician through the pathway step by step:
 | AI SDK | Vercel AI SDK v6 (`@ai-sdk/azure`, `@ai-sdk/react`) |
 | LLM | Azure OpenAI GPT-4.1-mini (Chat Completions API) |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest (131 tests; 87 deterministic pathway tests) |
+| Testing | Vitest (177 tests; 87 pathway tool tests; 30-case decision-tree audit) |
 | FHIR | SMART on FHIR scaffold; add `fhirclient` during Phase 2 Epic integration |
 
 ## Setup
@@ -84,7 +85,7 @@ Use `.env.example` as the template. Do not commit `.env.local`.
 npx vitest run
 ```
 
-131 tests cover the pathway logic, request sanitization, route guard, system-prompt safety framing, and pathway UI workflow. The 87 deterministic pathway tests verify every decision node from the Rush hs-TnI pathway PDF:
+177 tests cover the pathway logic, 30-case original decision-tree audit, request sanitization, route guard, prompt-backed pathway state guardrails, system-prompt safety framing, and pathway UI workflow. The pathway tests verify the Rush hs-TnI pathway PDF branches and boundary values:
 - STEMI/EQV diamond routing
 - 99% URL thresholds (boundary values)
 - Early MI rule-out (all 6 gate conditions)
@@ -101,6 +102,9 @@ npx vitest run
 - Low Risk OR criteria (recent testing / chronic HST / HEART <4), discharge recommendations, and chest pain charting prompts
 - All 7 PDF footnotes (A–G) emitted
 - 8 end-to-end patient scenarios
+- 30 named decision-tree cases covering STEMI, ischemic EKG, early rule-out, ESRD exclusions, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain
+- Correction precedence and false-positive parser guards for prompt-backed pathway state
+- UI guards that suppress stale ESRD buttons on free-text symptom duration/onset prompts
 
 ## Pre-Deployment
 
@@ -120,10 +124,14 @@ src/
                          #   determine_disposition, suggest_followups)
     constants.ts         # Clinical thresholds, footnotes A-G, dispositions
     system-prompt.ts     # Pathway conversation guide + safety rules
+    pathway-state.ts     # Prompt-backed pathway field extraction and next-step guardrail
+    pathway-ui.ts        # UI step inference and quick-reply normalization
     azure.ts             # Azure OpenAI provider config
   __tests__/
     pathway.test.ts      # 87 tests against PDF source of truth
-    chat-route.test.ts   # /api/chat request-size guard
+    pathway-decision-tree-30.test.ts # 30 named original decision-tree cases
+    pathway-state.test.ts # prompt-backed state extraction and correction tests
+    chat-route.test.ts   # /api/chat request-size and state-prompt guard tests
     system-prompt.test.ts # protocol-only safety framing and flow guards
     chat-request.test.ts # browser message sanitization
     pathway-ui.test.ts   # pathway step and quick-reply normalization
@@ -139,12 +147,13 @@ src/
 - ESRD guard blocks early rule-out at both troponin evaluation and disposition levels (double-lock)
 - Input validation: message role filtering, a 2 MB `/api/chat` Content-Length guard, and MIME allowlist for images
 - ECG image interpretation requires explicit physician confirmation before entering the pathway
+- Prompt-backed pathway state prefers the latest explicit clinician correction and avoids unsafe HEART single-letter parsing
 - Node-by-node PDF fidelity audit with 7 deviations found and corrected (see `docs/audits/pathway-build-audit.md`)
 
 ## Roadmap
 
 - **Phase 2**: SMART on FHIR Epic integration — auto-pull patient demographics, troponin labs, EKG results from the chart
-- **Server-owned pathway state**: Replace text-inferred step tracking with a deterministic state machine
+- **Deterministic pathway controller**: Replace prompt-backed state guidance and UI text inference with an API-owned session model that returns canonical `step`, `requiredField`, `acceptedFields`, and allowed tool actions
 - **Auth**: Session-based authentication via SMART on FHIR OAuth when embedded in Epic
 - **Persistence**: Conversation history and audit trail for clinical documentation
 - **Clinical validation**: Physician walkthrough and sign-off against the official Rush pathway source

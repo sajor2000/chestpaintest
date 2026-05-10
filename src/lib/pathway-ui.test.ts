@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getPathwayStep, normalizeQuickReplyOptions } from "./pathway-ui";
+import {
+  cleanQuickReplyPromptText,
+  getPathwayStep,
+  isDuplicateQuickReplyPromptText,
+  normalizeQuickReplyOptions,
+} from "./pathway-ui";
 
 describe("normalizeQuickReplyOptions", () => {
   it("replaces stale sex buttons when the visible question asks about ESRD", () => {
@@ -135,6 +140,31 @@ describe("normalizeQuickReplyOptions", () => {
     ).toEqual([]);
   });
 
+  it("suppresses stale ESRD buttons on a free-text symptom duration prompt", () => {
+    expect(
+      normalizeQuickReplyOptions("What is the duration of symptoms in hours?", [
+        "Yes - ESRD",
+        "No ESRD",
+      ])
+    ).toEqual([]);
+
+    expect(
+      normalizeQuickReplyOptions(
+        "When did the chest pain start? Please provide hours since onset.",
+        ["Yes - ESRD", "No ESRD"]
+      )
+    ).toEqual([]);
+  });
+
+  it("keeps ongoing chest pain buttons because that symptom question is binary", () => {
+    expect(
+      normalizeQuickReplyOptions("Is the patient having ongoing chest pain?", [
+        "Yes",
+        "No",
+      ])
+    ).toEqual(["Yes - ongoing pain", "No ongoing pain"]);
+  });
+
   it("suppresses follow-up buttons after a final low-risk disposition card", () => {
     expect(
       normalizeQuickReplyOptions(
@@ -179,6 +209,15 @@ describe("normalizeQuickReplyOptions", () => {
       )
     ).toEqual(["Yes - ischemic changes", "No ischemic changes"]);
   });
+
+  it("returns ESRD fallback buttons when the model omits tool options", () => {
+    expect(
+      normalizeQuickReplyOptions(
+        "Does the patient have end-stage renal disease (ESRD)?",
+        []
+      )
+    ).toEqual(["Yes - ESRD", "No ESRD"]);
+  });
 });
 
 describe("getPathwayStep", () => {
@@ -208,5 +247,59 @@ describe("getPathwayStep", () => {
     expect(
       getPathwayStep("No STEMI. The patient is male, no ESRD. Now let's get the initial troponin.")
     ).toBe("troponin0");
+  });
+});
+
+describe("quick-reply prompt cleanup", () => {
+  it("removes duplicated button-helper prose from visible assistant text", () => {
+    expect(
+      cleanQuickReplyPromptText(
+        "Hello. Does the EKG show STEMI or STEMI equivalent?\n\nI will provide buttons for quick replies."
+      )
+    ).toBe("Hello. Does the EKG show STEMI or STEMI equivalent?");
+
+    expect(
+      cleanQuickReplyPromptText(
+        "Next, patient sex: Male or Female? I'll provide quick buttons for response."
+      )
+    ).toBe("Next, patient sex: Male or Female?");
+  });
+
+  it("detects duplicate follow-up text after quick-reply buttons", () => {
+    expect(
+      isDuplicateQuickReplyPromptText(
+        "Does the EKG show STEMI or STEMI equivalent? (Please select)",
+        "Hello. Does the EKG show STEMI or STEMI equivalent?",
+        ["Yes - STEMI", "No STEMI"]
+      )
+    ).toBe(true);
+
+    expect(
+      isDuplicateQuickReplyPromptText(
+        "Please specify patient sex: Male or Female?",
+        "Next, patient sex: Male or Female?",
+        ["Male", "Female"]
+      )
+    ).toBe(true);
+  });
+
+  it("hides stale follow-up text when stale buttons were suppressed for a free-text prompt", () => {
+    expect(
+      isDuplicateQuickReplyPromptText(
+        "Please confirm: Does the patient have ESRD?",
+        "What is the symptom duration in hours?",
+        ["Yes - ESRD", "No ESRD"]
+      )
+    ).toBe(true);
+  });
+
+  it("keeps non-duplicate clinical text after quick-reply buttons", () => {
+    expect(
+      isDuplicateQuickReplyPromptText(
+        "Noted ischemic ST/T changes (Footnote A) on EKG. Next, patient sex: Male or Female?",
+        "Are there ischemic ST or T-wave changes?",
+        ["Male", "Female"]
+      )
+    ).toBe(false);
   });
 });

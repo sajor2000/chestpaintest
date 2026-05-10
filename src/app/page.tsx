@@ -5,7 +5,9 @@ import Image from "next/image";
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { FileUIPart } from "ai";
 import {
+  cleanQuickReplyPromptText,
   getPathwayStep,
+  isDuplicateQuickReplyPromptText,
   normalizeQuickReplyOptions,
   PATHWAY_STEPS,
   type PathwayStepId,
@@ -588,9 +590,75 @@ export default function Chat() {
             >
               {msg.parts.map((part, i) => {
                 if (part.type === "text") {
+                  const previousFollowupIndex = msg.parts
+                    .slice(0, i)
+                    .findLastIndex((p) => p.type === "tool-suggest_followups");
+                  if (previousFollowupIndex !== -1) {
+                    const previousFollowup = msg.parts[
+                      previousFollowupIndex
+                    ] as ToolPart;
+                    const previousOptions = previousFollowup.output?.options;
+                    const previousTextPart = msg.parts
+                      .slice(0, previousFollowupIndex)
+                      .filter((p) => p.type === "text")
+                      .pop();
+                    const previousText =
+                      previousTextPart && "text" in previousTextPart
+                        ? previousTextPart.text
+                        : "";
+
+                    if (
+                      Array.isArray(previousOptions) &&
+                      isDuplicateQuickReplyPromptText(
+                        part.text,
+                        previousText,
+                        previousOptions as string[]
+                      )
+                    ) {
+                      return null;
+                    }
+                  }
+
+                  const hasFollowingFollowups = msg.parts
+                    .slice(i + 1)
+                    .some((p) => p.type === "tool-suggest_followups");
+                  const text = hasFollowingFollowups
+                    ? cleanQuickReplyPromptText(part.text)
+                    : part.text;
+                  if (!text) return null;
+                  const hasAnyFollowups = msg.parts.some(
+                    (p) => p.type === "tool-suggest_followups"
+                  );
+                  const isLast = msg.id === messages[messages.length - 1]?.id;
+                  const fallbackReplyOptions =
+                    isLast && !hasFollowingFollowups && !hasAnyFollowups
+                      ? normalizeQuickReplyOptions(text, [])
+                      : [];
+
                   return (
-                    <span key={`${msg.id}-${i}`} className="whitespace-pre-wrap">
-                      {part.text}
+                    <span key={`${msg.id}-${i}`}>
+                      <span className="whitespace-pre-wrap">{text}</span>
+                      {fallbackReplyOptions.length > 0 && (
+                        <span className="mt-2 flex flex-wrap gap-2">
+                          {fallbackReplyOptions.map((opt) => (
+                            <button
+                              key={opt}
+                              disabled={!isLast || isLoading}
+                              onClick={() => {
+                                if (!isLast || isLoading) return;
+                                sendMessage({ text: opt });
+                              }}
+                              className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${
+                                isLast && !isLoading
+                                  ? "border-[#006332] text-[#006332] bg-white hover:bg-[#006332] hover:text-white cursor-pointer"
+                                  : "border-gray-200 text-gray-400 bg-gray-50 cursor-default"
+                              }`}
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </span>
+                      )}
                     </span>
                   );
                 }
@@ -627,6 +695,7 @@ export default function Chat() {
                     opts as string[]
                   );
                   const isLast = msg.id === messages[messages.length - 1]?.id;
+                  if (!isLast) return null;
                   return (
                     <div key={`${msg.id}-${i}`} className="flex flex-wrap gap-2 mt-2">
                       {replyOptions.map((opt) => (

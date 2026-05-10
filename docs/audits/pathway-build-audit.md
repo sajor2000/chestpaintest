@@ -15,6 +15,7 @@ This audit covers the current Next.js chest pain clinical decision support app, 
 - `src/lib/chat-request.ts` strips non-user messages and keeps only user-owned text plus valid image data URLs, reducing the risk of forged assistant/tool history from the browser.
 - `src/lib/tools.ts` owns clinical calculations for EKG routing, troponin thresholds, delta logic, HEART score, disposition, and follow-up suggestions.
 - `src/lib/system-prompt.ts` instructs the model to ask one pathway question at a time and to use tools for every clinical calculation.
+- `src/lib/pathway-state.ts` adds an intermediate prompt-backed state guardrail that extracts accepted clinician fields, prefers later corrections, avoids unsafe HEART parsing shortcuts, and supplies the current required field to the model.
 - `src/lib/pathway-ui.ts` infers the visible pathway step from assistant text and fixes known quick-reply button mismatches.
 
 ## Verification Evidence
@@ -28,13 +29,15 @@ npm run build
 npm audit --omit=dev
 ```
 
-Current expected suite coverage is 131 Vitest tests:
+Current expected suite coverage is 177 Vitest tests:
 
 - 87 deterministic pathway tests for Rush hs-TnI thresholds, explicit troponin source validation, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
+- 30 named original decision-tree audit cases covering STEMI/EQV, ischemic EKG, sex-specific URL thresholds, early rule-out gates, ESRD exclusions, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain.
 - 12 chat request sanitization tests.
-- 24 pathway UI workflow tests, including stale-button suppression for HST prompts and final disposition cards.
-- 1 chat route request-size guard test.
-- 7 system prompt safety-framing tests that require protocol-only wording, early rule-out flow, explicit troponin value gating, typed yes/no progression, typed HST source handling, explicit suspicion gating, and final-disposition stop behavior.
+- 31 pathway UI workflow tests, including stale-button suppression for HST and symptom timing prompts, fallback buttons when the model omits the button tool, final disposition cards, duplicate quick-reply prompt cleanup, and stale prompt text suppression after hidden buttons.
+- 2 chat route tests covering request-size guarding and injection of prompt-backed pathway state.
+- 7 prompt-backed pathway state tests covering accepted-field extraction, latest correction precedence, and HEART false-positive parsing guards.
+- 8 system prompt safety-framing tests that require protocol-only wording, early rule-out flow, explicit troponin value gating, typed yes/no progression, typed HST source handling, explicit suspicion gating, final-disposition stop behavior, and clean quick-reply wording.
 
 After any commit is pushed, confirm both remote checks:
 
@@ -50,9 +53,23 @@ After any commit is pushed, confirm both remote checks:
 - Significant deltas now return a structured clinical flag, math summary, pathway logic summary, and recommendations for the UI.
 - Low-risk discharge results now return discharge recommendations and chest pain onset/symptom charting prompts.
 - The system prompt and UI now state that the app surfaces the prespecified Rush hs-TnI protocol and does not make independent clinical decisions.
-- The current workflow step is still inferred in the UI from assistant text. This is useful for presentation, but it is not a server-owned pathway state.
-- The API now adds an intermediate server-owned pathway state prompt that parses clinician-provided fields, prefers later corrections, and tells the model not to re-ask for accepted fields. This is a guardrail, not the final session controller.
+- The current workflow step is still inferred in the UI from assistant text. This is useful for presentation, but it is not a deterministic server-owned pathway session.
+- The API now adds an intermediate prompt-backed pathway state guardrail that parses clinician-provided fields, prefers later corrections, and tells the model not to re-ask for accepted fields. This is a guardrail, not the final session controller.
+- Unsafe single-letter HEART aliases were removed from free-text parsing so `age 1` and `2-hour HST` cannot populate unrelated HEART components.
+- Quick-reply UX was tightened so the prompt asks the model not to repeat button labels in prose, and HEART score card labels now wrap instead of truncating clinical labels.
 - The next major safety improvement is a deterministic pathway session controller that returns canonical `step`, `question`, `allowedOptions`, accepted fields, and tool-derived clinical results.
+
+## Current PR Status (2026-05-10)
+
+- Branch: `codex/decision-tree-flow-audit`
+- Draft PR: `https://github.com/sajor2000/chestpaintest/pull/2`
+- Local verification passed on the current branch:
+  - `npx vitest run src/__tests__/pathway-decision-tree-30.test.ts`
+  - `npx vitest run src/lib/pathway-state.test.ts src/lib/chat-route.test.ts src/lib/system-prompt.test.ts`
+  - `npx vitest run`
+  - `npm run lint`
+  - `npm run build`
+- Browser flow was manually checked locally for pathway start, step progression, quick replies, and cleaner clinician guidance.
 
 ## PDF Fidelity Audit (2026-05-08)
 
@@ -102,7 +119,7 @@ Do not treat the app as ready for public clinical production use until these are
 - Validate the implementation against the official Rush pathway source with a clinical owner.
 - Add institutional access control before public or Epic-embedded use.
 - Add persistence and audit trail support before relying on the app for durable clinical documentation.
-- Replace prompt-backed pathway state guidance with a deterministic session controller before high-stakes use.
+- Replace prompt-backed pathway state guidance and inferred UI pathway state with a deterministic session controller before high-stakes use.
 
 ## Deployment Notes
 

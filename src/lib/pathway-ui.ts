@@ -71,12 +71,90 @@ function getActiveQuestionText(text: string) {
     : questionPrefix.slice(start + 1).trim();
 }
 
+export function cleanQuickReplyPromptText(text: string) {
+  return text
+    .replace(
+      /\s*\bI(?:'ll| will)\s+(?:provide|show|add)\s+(?:quick[- ]reply\s+|quick\s+)?buttons?(?:\s+(?:for\s+(?:you|response|quick replies)|below))?\.?/gi,
+      ""
+    )
+    .replace(/\s*\bI will provide buttons for quick replies\.?/gi, "")
+    .replace(/\s*\bOptions:\s*[^\n.]+\.?/gi, "")
+    .replace(/\s*\((?:please\s+)?(?:select|choose|respond)[^)]*\)/gi, "")
+    .replace(/\s*\bPlease\s+(?:select|choose|respond)(?:\s+one)?\.?/gi, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function normalizedQuestionSignature(text: string, options: string[]) {
+  const cleaned = cleanQuickReplyPromptText(text);
+  const question = getActiveQuestionText(cleaned).toLowerCase();
+  const optionKey = normalizeQuickReplyOptions(cleaned, options).join("|");
+  const topicKey =
+    optionKey ||
+    options
+      .map((option) => option.toLowerCase().replace(/[^a-z0-9]+/g, " "))
+      .join("|");
+
+  return {
+    topicKey,
+    questionKey: question
+      .replace(/\b(please|select|choose|respond|specify|answer|next|patient)\b/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  };
+}
+
+export function isDuplicateQuickReplyPromptText(
+  text: string,
+  previousText: string,
+  options: string[]
+) {
+  const cleaned = cleanQuickReplyPromptText(text);
+  if (!cleaned) return true;
+
+  const previousVisibleOptions = normalizeQuickReplyOptions(
+    previousText,
+    options
+  );
+  const currentVisibleOptions = normalizeQuickReplyOptions(cleaned, options);
+  if (previousVisibleOptions.length === 0 && currentVisibleOptions.length > 0) {
+    return true;
+  }
+
+  const current = normalizedQuestionSignature(cleaned, options);
+  const previous = normalizedQuestionSignature(previousText, options);
+  if (!current.topicKey || current.topicKey !== previous.topicKey) return false;
+
+  if (current.questionKey === previous.questionKey) return true;
+  if (current.questionKey.length < 12 || previous.questionKey.length < 12) {
+    return false;
+  }
+
+  return (
+    current.questionKey.includes(previous.questionKey) ||
+    previous.questionKey.includes(current.questionKey)
+  );
+}
+
 function isFreeTextLabPrompt(text: string) {
   return (
     /\b(hst|hs-tni|troponin)\b/i.test(text) &&
     /\b(value|ng\/?l|provide|enter|what was)\b/i.test(text) &&
     !/\bheart\b/i.test(text) &&
     !/\bscore\b/i.test(text)
+  );
+}
+
+function isFreeTextSymptomTimingPrompt(text: string) {
+  return (
+    /\b(symptom|symptoms|chest pain|pain|sx|onset|duration|started|began|hours?)\b/i.test(
+      text
+    ) &&
+    /\b(what|when|duration|onset|started|began|hours?|how long)\b/i.test(text) &&
+    !/\besrd\b/i.test(text) &&
+    !/\bongoing\b/i.test(text)
   );
 }
 
@@ -103,7 +181,9 @@ export function normalizeQuickReplyOptions(
     }
   }
   if (bestRule) return bestRule.options;
-  if (isFreeTextLabPrompt(question)) return [];
+  if (isFreeTextLabPrompt(question) || isFreeTextSymptomTimingPrompt(question)) {
+    return [];
+  }
   return toolOptions;
 }
 
