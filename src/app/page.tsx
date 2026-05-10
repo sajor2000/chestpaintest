@@ -629,9 +629,10 @@ export default function Chat() {
                   const hasFollowingFollowups = msg.parts
                     .slice(i + 1)
                     .some((p) => p.type === "tool-suggest_followups");
-                  const rawText = hasFollowingFollowups
-                    ? cleanQuickReplyPromptText(part.text)
-                    : part.text;
+                  const rawText =
+                    msg.role === "assistant" || hasFollowingFollowups
+                      ? cleanQuickReplyPromptText(part.text)
+                      : part.text;
                   const text =
                     msg.role === "assistant"
                       ? cleanRepeatedQuestionText(rawText)
