@@ -28,12 +28,13 @@ npm run build
 npm audit --omit=dev
 ```
 
-Current expected suite coverage is 86 Vitest tests:
+Current expected suite coverage is 127 Vitest tests:
 
-- 78 deterministic pathway tests for Rush hs-TnI thresholds, deltas (including 3-lane routing, 20% switching rule), HEART score (with labels), ESRD guard, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), and end-to-end patient scenarios.
-- 2 chat request sanitization tests.
-- 5 pathway UI workflow tests, including the ESRD question stale-button correction.
+- 83 deterministic pathway tests for Rush hs-TnI thresholds, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
+- 12 chat request sanitization tests.
+- 24 pathway UI workflow tests, including stale-button suppression for HST prompts and final disposition cards.
 - 1 chat route request-size guard test.
+- 7 system prompt safety-framing tests that require protocol-only wording, early rule-out flow, explicit troponin value gating, typed yes/no progression, typed HST source handling, explicit suspicion gating, and final-disposition stop behavior.
 
 After any commit is pushed, confirm both remote checks:
 
@@ -46,6 +47,9 @@ After any commit is pushed, confirm both remote checks:
 - The app now has an explicit 2 MB `Content-Length` guard in `/api/chat` before JSON parsing. This should be kept in addition to any hosting-platform limits.
 - Browser-supplied assistant/tool messages are discarded before AI SDK conversion, so forged client tool results are not trusted.
 - `@ai-sdk/openai` has been removed as a direct dependency. It remains in the lockfile only because `@ai-sdk/azure` depends on it.
+- Significant deltas now return a structured clinical flag, math summary, pathway logic summary, and recommendations for the UI.
+- Low-risk discharge results now return discharge recommendations and chest pain onset/symptom charting prompts.
+- The system prompt and UI now state that the app surfaces the prespecified Rush hs-TnI protocol and does not make independent clinical decisions.
 - The current workflow step is still inferred in the UI from assistant text. This is useful for presentation, but it is not a server-owned pathway state.
 - The next major safety improvement is a deterministic pathway session controller that returns canonical `step`, `question`, `allowedOptions`, and tool-derived clinical results.
 
@@ -63,11 +67,18 @@ A node-by-node audit was performed against `public/troponin-pathway.png`. Seven 
 
 ### LLM Anti-Bypass Hardening
 
-Nine system prompt safety rules now prevent the LLM from deviating:
+Sixteen system prompt safety rules now prevent the LLM from deviating:
 - Rules 1-6: No computing without tools, no fabricating values, no skipping steps.
 - Rule 7: PENDING results must be followed (collect data, re-call tool).
 - Rule 8: `delta_range` must come from `calculate_delta` output verbatim.
 - Rule 9: `early_rule_out` only true if `evaluate_troponin` said eligible.
+- Rule 10: Results must be framed as prespecified protocol output.
+- Rule 11: Early rule-out must call disposition before HEART scoring.
+- Rule 12: `evaluate_troponin` cannot be called until an explicit HST/hs-TnI/troponin value is provided.
+- Rule 13: Clinical suspicion must not be inferred from symptoms or documentation text.
+- Rule 14: Plain typed yes/no answers must advance the current ESRD or ongoing chest-pain question.
+- Rule 15: A typed HST/hs-TnI/troponin value can serve as its own source text.
+- Rule 16: Final non-PENDING dispositions stop the flow without additional follow-up buttons.
 
 All 7 PDF footnotes (A-G) are emitted by at least one tool.
 

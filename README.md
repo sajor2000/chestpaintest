@@ -1,6 +1,6 @@
 # Rush Chest Pain CDS
 
-Clinical decision support chatbot for the Rush University System for Health **High-Sensitivity Troponin I (hs-TnI) Algorithm**. Guides ER physicians through the chest pain pathway conversationally, with all clinical decisions enforced by deterministic tool functions.
+Clinical decision support chatbot for the Rush University System for Health **High-Sensitivity Troponin I (hs-TnI) Algorithm**. Guides ER physicians through the chest pain pathway conversationally by surfacing the prespecified protocol with deterministic tool functions.
 
 ## How It Works
 
@@ -13,13 +13,15 @@ The chatbot walks the physician through the pathway step by step:
 5. **HEART Score** — LLM-guided 5-component scoring with visual breakdown card
 6. **Disposition** — Low (discharge) / Intermediate (observation) / Chronic Injury / High (admit) / Pending (4hr or repeat HST required)
 
-**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions with 86 tests verified node-by-node against the source PDF.
+**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions with 127 tests, including 83 tests verified node-by-node against the source PDF.
 
 ## Features
 
 - **Quick-reply buttons** for binary/choice questions (STEMI yes/no, sex, ESRD, etc.)
 - **ECG image upload** with optional AI-assisted second opinion (MD interpretation is always authoritative)
 - **HEART Score card** — visual 5-row breakdown with per-component scores, labels, and risk-level color coding; LLM walks clinician through each component with scoring criteria
+- **Delta math card** — displays the HST subtraction, pathway rule, delta category, and a clear clinically significant delta flag when criteria are met
+- **Low-risk discharge support** — surfaces discharge recommendations plus chest pain onset and symptom charting prompts
 - **Pathway diagram** toggleable in the header for reference during assessment
 - **Risk cards** color-coded by disposition (green/amber/orange/red)
 - **PENDING dispositions** — intermediate delta (4–14) blocks disposition until 4hr HST obtained; symptoms <4hr require repeat HST (Footnote F)
@@ -34,7 +36,7 @@ The chatbot walks the physician through the pathway step by step:
 | AI SDK | Vercel AI SDK v6 (`@ai-sdk/azure`, `@ai-sdk/react`) |
 | LLM | Azure OpenAI GPT-4.1-mini (Chat Completions API) |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest (86 tests; 78 deterministic pathway tests) |
+| Testing | Vitest (127 tests; 83 deterministic pathway tests) |
 | FHIR | SMART on FHIR scaffold; add `fhirclient` during Phase 2 Epic integration |
 
 ## Setup
@@ -82,19 +84,21 @@ Use `.env.example` as the template. Do not commit `.env.local`.
 npx vitest run
 ```
 
-86 tests cover the pathway logic, request sanitization, route guard, and pathway UI workflow. The 78 deterministic pathway tests verify every decision node from the Rush hs-TnI pathway PDF:
+127 tests cover the pathway logic, request sanitization, route guard, system-prompt safety framing, and pathway UI workflow. The 83 deterministic pathway tests verify every decision node from the Rush hs-TnI pathway PDF:
 - STEMI/EQV diamond routing
 - 99% URL thresholds (boundary values)
 - Early MI rule-out (all 6 gate conditions)
+- Explicit low clinical suspicion gating for early rule-out
 - ESRD guard (Footnote C)
 - PPV >200 flag (Footnote D)
 - Delta 3-lane routing: minimal (<4), intermediate (4–14), significant (≥15 / ≥20%)
+- Significant delta clinical flag, math summary, and pathway recommendations
 - 20% switching rule (replaces absolute threshold when either value ≥100)
 - HEART score boundaries and labels
 - PENDING_4HR (intermediate delta without 4hr result)
 - PENDING_REPEAT (symptoms <4hr, Footnote F)
 - Chronic Injury routing (above URL, no significant delta)
-- Low Risk OR criteria (recent testing / chronic HST / HEART <4)
+- Low Risk OR criteria (recent testing / chronic HST / HEART <4), discharge recommendations, and chest pain charting prompts
 - All 7 PDF footnotes (A–G) emitted
 - 8 end-to-end patient scenarios
 
@@ -118,15 +122,17 @@ src/
     system-prompt.ts     # Pathway conversation guide + safety rules
     azure.ts             # Azure OpenAI provider config
   __tests__/
-    pathway.test.ts      # 78 tests against PDF source of truth
-    route.test.ts        # /api/chat request-size guard
+    pathway.test.ts      # 83 tests against PDF source of truth
+    chat-route.test.ts   # /api/chat request-size guard
+    system-prompt.test.ts # protocol-only safety framing and flow guards
     chat-request.test.ts # browser message sanitization
     pathway-ui.test.ts   # pathway step and quick-reply normalization
 ```
 
 ## Safety
 
-- **9 critical safety rules** in the system prompt prevent the LLM from fabricating clinical decisions, skipping steps, or bypassing PENDING results
+- **16 critical safety rules** in the system prompt prevent the LLM from fabricating clinical decisions, skipping steps, bypassing PENDING results, repeating answered steps, or treating the app as an independent decision-maker
+- The app is framed as surfacing a prespecified Rush hs-TnI protocol, not making independent clinical decisions
 - All clinical logic runs in deterministic, tested tool functions — the LLM cannot compute thresholds, deltas, or dispositions
 - `delta_range` must come verbatim from `calculate_delta` output (Rule 8); `early_rule_out` only from `evaluate_troponin` (Rule 9)
 - PENDING dispositions force data collection before final risk stratification (Rule 7)
