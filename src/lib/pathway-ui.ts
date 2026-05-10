@@ -271,7 +271,11 @@ export function getPathwayStep(text: string): PathwayStepId {
   if (/\b0[- ]?hour\b|\b0h\b|initial.*hst|initial.*troponin|early.*rule[- ]out/i.test(text)) {
     return "troponin0";
   }
-  if (/\besrd\b|\bsex\b|\bmale\b|\bfemale\b|patient basics/i.test(text)) {
+  if (
+    /\besrd\b|\bsex\b|\bmale\b|\bfemale\b|patient basics|\bsymptoms?\b|\bduration\b|\bonset\b|\bhow many hours\b/i.test(
+      text
+    )
+  ) {
     return "basics";
   }
   return "ekg";

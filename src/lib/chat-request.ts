@@ -70,8 +70,12 @@ function normalizeTextForPathwayContext(
   }
 
   if (
-    question.includes("duration") &&
-    (question.includes("symptom") || question.includes("chest pain")) &&
+    (question.includes("duration") ||
+      (question.includes("how many") && question.includes("hours")) ||
+      (question.includes("hours") && question.includes("present"))) &&
+    (question.includes("symptom") ||
+      question.includes("symptoms") ||
+      question.includes("chest pain")) &&
     /^\d+(?:\.\d+)?\s*(?:h|hr|hrs|hour|hours)$/i.test(text.trim())
   ) {
     return `Symptom duration: ${text.trim()}. This is not an HST/troponin value.`;

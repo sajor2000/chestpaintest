@@ -165,6 +165,37 @@ describe("sanitizeClientMessages", () => {
     });
   });
 
+  it("labels typed symptom-hour answers when the model asks how many hours symptoms have been present", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-duration",
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: "How many hours have the symptoms been present?",
+          },
+        ],
+      },
+      {
+        id: "user-duration",
+        role: "user",
+        parts: [{ type: "text", text: "4 hours" }],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-duration",
+      role: "user",
+      parts: [
+        {
+          type: "text",
+          text: "Symptom duration: 4 hours. This is not an HST/troponin value.",
+        },
+      ],
+    });
+  });
+
   it("labels typed onset answers with the active question context", () => {
     const messages = sanitizeClientMessages([
       {

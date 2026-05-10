@@ -30,12 +30,12 @@ npm audit --omit=dev
 npm run audit:prod:browser
 ```
 
-Current expected suite coverage is 184 Vitest tests:
+Current expected suite coverage is 186 Vitest tests:
 
 - 87 deterministic pathway tests for Rush hs-TnI thresholds, explicit troponin source validation, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
 - 30 named original decision-tree audit cases covering STEMI/EQV, ischemic EKG, sex-specific URL thresholds, early rule-out gates, ESRD exclusions, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain.
-- 12 chat request sanitization tests.
-- 34 pathway UI workflow tests, including stale-button suppression for HST and symptom timing prompts, fallback buttons when the model omits the button tool, terminal STEMI result button suppression, final disposition cards, duplicate quick-reply prompt cleanup, repeated question cleanup, physician-facing step guidance, and stale prompt text suppression after hidden buttons.
+- 13 chat request sanitization tests, including symptom-duration normalization for alternate "how many hours" phrasing.
+- 35 pathway UI workflow tests, including stale-button suppression for HST and symptom timing prompts, fallback buttons when the model omits the button tool, terminal STEMI result button suppression, final disposition cards, duplicate quick-reply prompt cleanup, repeated question cleanup, physician-facing step guidance, and stale prompt text suppression after hidden buttons.
 - 2 chat route tests covering request-size guarding and injection of prompt-backed pathway state.
 - 2 assistant stream cleanup tests covering server-side removal of forbidden button filler, including filler split across streamed token chunks.
 - 8 prompt-backed pathway state tests covering accepted-field extraction, latest correction precedence, normalized ESRD false parsing, and HEART false-positive parsing guards.

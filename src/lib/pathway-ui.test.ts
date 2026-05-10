@@ -259,6 +259,12 @@ describe("getPathwayStep", () => {
       getPathwayStep("No STEMI. The patient is male, no ESRD. Now let's get the initial troponin.")
     ).toBe("troponin0");
   });
+
+  it("keeps symptom duration prompts in patient basics", () => {
+    expect(getPathwayStep("How many hours have the symptoms been present?")).toBe(
+      "basics"
+    );
+  });
 });
 
 describe("getStepGuidance", () => {
