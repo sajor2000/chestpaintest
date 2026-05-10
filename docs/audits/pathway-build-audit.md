@@ -28,9 +28,9 @@ npm run build
 npm audit --omit=dev
 ```
 
-Current expected suite coverage is 127 Vitest tests:
+Current expected suite coverage is 131 Vitest tests:
 
-- 83 deterministic pathway tests for Rush hs-TnI thresholds, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
+- 87 deterministic pathway tests for Rush hs-TnI thresholds, explicit troponin source validation, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
 - 12 chat request sanitization tests.
 - 24 pathway UI workflow tests, including stale-button suppression for HST prompts and final disposition cards.
 - 1 chat route request-size guard test.
@@ -51,7 +51,8 @@ After any commit is pushed, confirm both remote checks:
 - Low-risk discharge results now return discharge recommendations and chest pain onset/symptom charting prompts.
 - The system prompt and UI now state that the app surfaces the prespecified Rush hs-TnI protocol and does not make independent clinical decisions.
 - The current workflow step is still inferred in the UI from assistant text. This is useful for presentation, but it is not a server-owned pathway state.
-- The next major safety improvement is a deterministic pathway session controller that returns canonical `step`, `question`, `allowedOptions`, and tool-derived clinical results.
+- The API now adds an intermediate server-owned pathway state prompt that parses clinician-provided fields, prefers later corrections, and tells the model not to re-ask for accepted fields. This is a guardrail, not the final session controller.
+- The next major safety improvement is a deterministic pathway session controller that returns canonical `step`, `question`, `allowedOptions`, accepted fields, and tool-derived clinical results.
 
 ## PDF Fidelity Audit (2026-05-08)
 
@@ -101,7 +102,7 @@ Do not treat the app as ready for public clinical production use until these are
 - Validate the implementation against the official Rush pathway source with a clinical owner.
 - Add institutional access control before public or Epic-embedded use.
 - Add persistence and audit trail support before relying on the app for durable clinical documentation.
-- Replace inferred pathway workflow state with server-owned pathway state before high-stakes use.
+- Replace prompt-backed pathway state guidance with a deterministic session controller before high-stakes use.
 
 ## Deployment Notes
 

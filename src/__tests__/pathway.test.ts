@@ -128,6 +128,34 @@ describe("evaluate_troponin — PDF: 99% URL thresholds", () => {
     expect(r.above_url).toBe(false);
   });
 
+  it("rejects positive non-troponin sources before threshold evaluation", async () => {
+    for (const value_source of ["male", "4 hours ago", "age 70"]) {
+      const r = await trop({
+        value: 4,
+        value_source,
+        hour: "0",
+        sex: "female",
+        is_esrd: false,
+      });
+
+      expect(r.invalid_input).toBe(true);
+      expect(r.message).toContain("Troponin evaluation was not performed");
+    }
+  });
+
+  it("rejects troponin source text when the documented number does not match the tool value", async () => {
+    const r = await trop({
+      value: 3,
+      value_source: "0-hour HST value: 4 ng/L.",
+      hour: "0",
+      sex: "female",
+      is_esrd: false,
+    });
+
+    expect(r.invalid_input).toBe(true);
+    expect(r.message).toContain("does not match");
+  });
+
   it("Male 99% URL = 35 ng/L — value 34 is below", async () => {
     const r = await trop({ value: 34, hour: "0", sex: "male", is_esrd: false });
     expect(r.above_url).toBe(false);
@@ -200,6 +228,38 @@ describe("evaluate_troponin — PDF: Early MI rule-out", () => {
       clinical_suspicion: "low",
       clinical_suspicion_source: "Clinical suspicion for ACS: low.",
       messages: [],
+    });
+
+    expect(r.early_rule_out_eligible).toBe(false);
+    expect(r.needs_clinical_suspicion).toBe(true);
+  });
+
+  it("HST <5 requires the clinical suspicion source itself to document low suspicion", async () => {
+    const r = await trop({
+      value: 3,
+      hour: "0",
+      sex: "male",
+      is_esrd: false,
+      symptom_duration_hours: 4,
+      clinical_suspicion: "low",
+      clinical_suspicion_source: "Symptoms are resolved after walking and antacid.",
+      messages: [{ role: "user" as const, content: "Clinical suspicion for ACS: low." }],
+    });
+
+    expect(r.early_rule_out_eligible).toBe(false);
+    expect(r.needs_clinical_suspicion).toBe(true);
+  });
+
+  it("HST <5 requires clinical suspicion source evidence instead of using prior message text alone", async () => {
+    const r = await trop({
+      value: 3,
+      hour: "0",
+      sex: "male",
+      is_esrd: false,
+      symptom_duration_hours: 4,
+      clinical_suspicion: "low",
+      clinical_suspicion_source: "",
+      messages: [{ role: "user" as const, content: "Clinical suspicion for ACS: low." }],
     });
 
     expect(r.early_rule_out_eligible).toBe(false);

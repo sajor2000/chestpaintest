@@ -29,8 +29,18 @@ function textFromMessageContent(content: unknown): string {
     .join("\n");
 }
 
-function hasExplicitLowClinicalSuspicion(messages: unknown[]) {
-  return messages.some((message) => {
+function sourceDocumentsLowClinicalSuspicion(text: string) {
+  const normalized = text.trim();
+  return (
+    /^low$/i.test(normalized) ||
+    /(?:clinical suspicion(?: for acs)?|suspicion for acs)[^\n.]*\blow\b|\blow\b[^\n.]*(?:clinical suspicion(?: for acs)?|suspicion for acs)/i.test(
+      normalized
+    )
+  );
+}
+
+function getUserMessageTexts(messages: unknown[]) {
+  return messages.flatMap((message) => {
     if (
       typeof message !== "object" ||
       message === null ||
@@ -38,14 +48,48 @@ function hasExplicitLowClinicalSuspicion(messages: unknown[]) {
       message.role !== "user" ||
       !("content" in message)
     ) {
-      return false;
+      return [];
     }
 
-    const text = textFromMessageContent(message.content);
-    return /(?:clinical suspicion(?: for acs)?|suspicion for acs)[^\n.]*\blow\b|\blow\b[^\n.]*(?:clinical suspicion(?: for acs)?|suspicion for acs)/i.test(
-      text
+    return [textFromMessageContent(message.content)];
+  });
+}
+
+function hasExplicitLowClinicalSuspicion(
+  messages: unknown[],
+  clinicalSuspicionSource?: string
+) {
+  if (
+    !clinicalSuspicionSource ||
+    !sourceDocumentsLowClinicalSuspicion(clinicalSuspicionSource)
+  ) {
+    return false;
+  }
+
+  const source = clinicalSuspicionSource.trim().toLowerCase();
+  return getUserMessageTexts(messages).some((text) => {
+    const normalized = text.trim().toLowerCase();
+    return (
+      normalized.includes(source) ||
+      (/^low$/i.test(clinicalSuspicionSource.trim()) &&
+        sourceDocumentsLowClinicalSuspicion(text))
     );
   });
+}
+
+function troponinSourceValues(valueSource: string) {
+  const unitValues = [...valueSource.matchAll(/(\d+(?:\.\d+)?)\s*ng\/?l\b/gi)].map(
+    (match) => Number(match[1])
+  );
+  if (unitValues.length > 0) return unitValues;
+
+  const withoutTimepoints = valueSource.replace(
+    /\b[024]\s*[- ]?(?:hour|hr|h)\b/gi,
+    ""
+  );
+  return [...withoutTimepoints.matchAll(/\d+(?:\.\d+)?/g)].map((match) =>
+    Number(match[0])
+  );
 }
 
 export const assessEkg = tool({
@@ -121,6 +165,7 @@ export const evaluateTroponin = tool({
       is_esrd,
       symptom_duration_hours,
       clinical_suspicion,
+      clinical_suspicion_source,
     },
     { messages }
   ) => {
@@ -136,20 +181,29 @@ export const evaluateTroponin = tool({
       /\bchest pain onset\b/i.test(value_source) ||
       /\bongoing chest pain\b/i.test(value_source) ||
       /\besrd\b/i.test(value_source);
-    const sourceHasNumericValue = /\d+(?:\.\d+)?/.test(value_source);
+    const sourceValues = troponinSourceValues(value_source);
+    const sourceValueMatches = sourceValues.some(
+      (sourceValue) => Math.abs(sourceValue - value) < 1e-9
+    );
 
     if (
       sourceExplicitlyNotTroponin ||
       sourceIsKnownNonTroponinContext ||
-      (value === 0 &&
-        !sourceLooksLikeTroponin &&
-        !sourceIsBareNumber &&
-        !sourceHasNumericValue)
+      (!sourceLooksLikeTroponin && !sourceIsBareNumber) ||
+      sourceValues.length === 0
     ) {
       return {
         invalid_input: true,
         message:
           "Troponin evaluation was not performed because the provided source text does not explicitly document an HST/hs-TnI/troponin value. Ask for the troponin value in ng/L before calling evaluate_troponin.",
+      };
+    }
+
+    if (!sourceValueMatches) {
+      return {
+        invalid_input: true,
+        message:
+          "Troponin evaluation was not performed because the documented source value does not match the numeric value passed to evaluate_troponin. Ask for the HST value in ng/L and call the tool with the exact same value.",
       };
     }
 
@@ -170,7 +224,7 @@ export const evaluateTroponin = tool({
 
     const explicitLowSuspicion =
       clinical_suspicion === "low" &&
-      hasExplicitLowClinicalSuspicion(messages);
+      hasExplicitLowClinicalSuspicion(messages, clinical_suspicion_source);
     const ruleOutBiomarkerContext =
       hour === "0" &&
       value < T.EARLY_RULE_OUT &&
@@ -425,7 +479,9 @@ export const determineDisposition = tool({
   }),
   execute: async (input, { messages }) => {
     const significant_delta = input.delta_range === "significant";
-    const explicitLowSuspicion = hasExplicitLowClinicalSuspicion(messages);
+    const explicitLowSuspicion = getUserMessageTexts(messages).some(
+      sourceDocumentsLowClinicalSuspicion
+    );
 
     if (input.early_rule_out && input.is_esrd) {
       return {
