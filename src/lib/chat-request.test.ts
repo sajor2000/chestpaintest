@@ -196,6 +196,37 @@ describe("sanitizeClientMessages", () => {
     });
   });
 
+  it("labels repeat EKG ischemic answers from the active question context", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-repeat-ekg",
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: "Does the repeat 2-hour EKG show ischemic ST or T-wave changes?",
+          },
+        ],
+      },
+      {
+        id: "user-repeat-ekg",
+        role: "user",
+        parts: [{ type: "text", text: "No ischemic changes" }],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-repeat-ekg",
+      role: "user",
+      parts: [
+        {
+          type: "text",
+          text: "2-hour repeat EKG ischemic changes: no.",
+        },
+      ],
+    });
+  });
+
   it("labels typed onset answers with the active question context", () => {
     const messages = sanitizeClientMessages([
       {

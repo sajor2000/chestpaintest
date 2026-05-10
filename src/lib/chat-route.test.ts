@@ -12,6 +12,10 @@ vi.mock("@/lib/assistant-stream", async () => {
   return await import("./assistant-stream");
 });
 
+vi.mock("@/lib/pathway-controller", async () => {
+  return await import("./pathway-controller");
+});
+
 vi.mock("@/lib/pathway-state", async () => {
   return await import("./pathway-state");
 });
@@ -29,11 +33,24 @@ vi.mock("@/lib/tools", () => ({
   suggestFollowups: {},
 }));
 
-vi.mock("ai", () => ({
+vi.mock("ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("ai")>()),
+  createUIMessageStream: vi.fn(({ execute }) => {
+    const writes: unknown[] = [];
+    const writer = {
+      write: vi.fn((part) => writes.push(part)),
+      merge: vi.fn(),
+    };
+    execute({ writer });
+    return { writes, writer };
+  }),
+  createUIMessageStreamResponse: vi.fn(({ stream }) => {
+    return new Response(JSON.stringify(stream.writes));
+  }),
   convertToModelMessages: vi.fn(async (messages) => messages),
   stepCountIs: vi.fn((steps) => ({ steps })),
   streamText: vi.fn(() => ({
-    toUIMessageStreamResponse: () => new Response("ok"),
+    toUIMessageStream: () => "model-stream",
   })),
 }));
 
@@ -58,7 +75,7 @@ describe("/api/chat", () => {
     });
   });
 
-  it("adds server-owned pathway state to the model system prompt", async () => {
+  it("streams canonical pathway state and binds the model to the controller step", async () => {
     const { streamText } = await import("ai");
     const { POST } = await import("../app/api/chat/route");
 
@@ -76,7 +93,7 @@ describe("/api/chat", () => {
               parts: [
                 {
                   type: "text",
-                  text: "No STEMI. Female. No ESRD. Symptoms started 5 hours ago. 0-hour HST is 3 ng/L.",
+                  text: "No STEMI. No ischemic changes. Female. No ESRD. Symptoms started 5 hours ago. 0-hour HST is 3 ng/L.",
                 },
               ],
             },
@@ -86,19 +103,35 @@ describe("/api/chat", () => {
     );
 
     expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual([
+      expect.objectContaining({
+        type: "data-pathway-state",
+        id: "pathway-state",
+        data: expect.objectContaining({
+          step: "troponin0",
+          requiredField: "clinicalSuspicion",
+          allowedOptions: ["Low", "Moderate", "High"],
+        }),
+      }),
+    ]);
     expect(streamText).toHaveBeenCalledWith(
       expect.objectContaining({
-        system: expect.stringContaining("SERVER-OWNED PATHWAY STATE"),
+        system: expect.stringContaining("SERVER-OWNED PATHWAY CONTROLLER"),
       })
     );
     expect(streamText).toHaveBeenCalledWith(
       expect.objectContaining({
-        system: expect.stringContaining('"sex":"female"'),
+        system: expect.stringContaining("requiredField"),
       })
     );
     expect(streamText).toHaveBeenCalledWith(
       expect.objectContaining({
         experimental_transform: expect.any(Function),
+      })
+    );
+    expect(streamText).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        tools: expect.anything(),
       })
     );
   });

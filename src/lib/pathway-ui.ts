@@ -280,3 +280,35 @@ export function getPathwayStep(text: string): PathwayStepId {
   }
   return "ekg";
 }
+
+export function getControllerPathwayStep(
+  controllerState:
+    | {
+        step?: PathwayStepId;
+      }
+    | null
+    | undefined,
+  fallbackText: string
+): PathwayStepId {
+  return controllerState?.step ?? getPathwayStep(fallbackText);
+}
+
+export function getControllerQuickReplyOptions(
+  controllerState:
+    | {
+        allowedOptions?: string[];
+        terminal?: boolean;
+      }
+    | null
+    | undefined,
+  fallbackOptions: string[]
+) {
+  if (controllerState?.terminal) return [];
+  if (
+    Array.isArray(controllerState?.allowedOptions) &&
+    controllerState.allowedOptions.length > 0
+  ) {
+    return controllerState.allowedOptions;
+  }
+  return fallbackOptions;
+}

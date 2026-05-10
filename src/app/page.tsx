@@ -7,13 +7,15 @@ import type { FileUIPart } from "ai";
 import {
   cleanQuickReplyPromptText,
   cleanRepeatedQuestionText,
-  getPathwayStep,
+  getControllerPathwayStep,
+  getControllerQuickReplyOptions,
   getStepGuidance,
   isDuplicateQuickReplyPromptText,
   normalizeQuickReplyOptions,
   PATHWAY_STEPS,
   type PathwayStepId,
 } from "@/lib/pathway-ui";
+import type { PathwayControllerSnapshot } from "@/lib/pathway-controller";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_IMAGE_BYTES = 1024 * 1024; // 1 MB
@@ -144,6 +146,34 @@ type ToolPart = { type: string; state?: string; output?: Record<string, unknown>
 
 type ChatMessage = ReturnType<typeof useChat>["messages"][number];
 
+type ControllerDataPart = {
+  type: "data-pathway-state";
+  data?: PathwayControllerSnapshot;
+};
+
+function isControllerDataPart(part: { type: string }): part is ControllerDataPart {
+  return part.type === "data-pathway-state";
+}
+
+function getMessageControllerState(
+  msg: ChatMessage
+): PathwayControllerSnapshot | null {
+  for (const part of [...msg.parts].reverse()) {
+    if (isControllerDataPart(part) && part.data) return part.data;
+  }
+  return null;
+}
+
+function getLatestControllerState(
+  messages: ChatMessage[]
+): PathwayControllerSnapshot | null {
+  for (const msg of [...messages].reverse()) {
+    const state = getMessageControllerState(msg);
+    if (state) return state;
+  }
+  return null;
+}
+
 function hasFinalDispositionResult(msg: ChatMessage): boolean {
   return msg.parts.some((part) => {
     if (!part.type.startsWith("tool-")) return false;
@@ -161,6 +191,59 @@ function getMessageText(msg: ChatMessage): string {
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n");
+}
+
+function ControllerResultCards({
+  snapshot,
+}: {
+  snapshot: PathwayControllerSnapshot;
+}) {
+  const displayResults = snapshot.results.filter((result) =>
+    ["assess_ekg", "calculate_delta", "calculate_heart_score", "determine_disposition"].includes(
+      result.kind
+    )
+  );
+  if (displayResults.length === 0) return null;
+
+  return (
+    <div className="mt-2 space-y-2">
+      {displayResults.map((result, index) => {
+        if (
+          result.kind === "determine_disposition" ||
+          result.data.action === "STEMI_PATHWAY"
+        ) {
+          return <RiskCard key={`${result.kind}-${index}`} data={result.data} />;
+        }
+        if (result.kind === "calculate_delta") {
+          return (
+            <div
+              key={`${result.kind}-${index}`}
+              className="rounded-lg border border-[#006332]/15 bg-[#f9fbfa] p-3 text-xs text-[#353535]"
+            >
+              <div className="font-bold text-[#006332]">
+                {result.hour}-hour delta
+              </div>
+              <div className="mt-1">
+                {str(result.data.math_summary)} {str(result.data.message)}
+              </div>
+            </div>
+          );
+        }
+        if (result.kind === "calculate_heart_score") {
+          return (
+            <div
+              key={`${result.kind}-${index}`}
+              className="rounded-lg border border-[#c8902e]/25 bg-[#fffaf0] p-3 text-xs text-[#353535]"
+            >
+              <div className="font-bold text-[#7a4a00]">HEART score</div>
+              <div className="mt-1">{str(result.data.message)}</div>
+            </div>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
 }
 
 function PathwayRail({ activeStep }: { activeStep: PathwayStepId }) {
@@ -502,7 +585,11 @@ export default function Chat() {
   const latestAssistantText = latestAssistantMessage
     ? getMessageText(latestAssistantMessage)
     : "";
-  const activeStep = getPathwayStep(latestAssistantText);
+  const latestControllerState = getLatestControllerState(messages);
+  const activeStep = getControllerPathwayStep(
+    latestControllerState,
+    latestAssistantText
+  );
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -629,6 +716,7 @@ export default function Chat() {
           </div>
         )}
         {messages.map((msg) => {
+          const messageControllerState = getMessageControllerState(msg);
           return (
             <div
               key={msg.id}
@@ -702,7 +790,10 @@ export default function Chat() {
                   const isLast = msg.id === messages[messages.length - 1]?.id;
                   const fallbackReplyOptions =
                     isLast && !hasFollowingFollowups && !hasAnyFollowups
-                      ? normalizeQuickReplyOptions(text, [])
+                      ? getControllerQuickReplyOptions(
+                          messageControllerState ?? latestControllerState,
+                          normalizeQuickReplyOptions(text, [])
+                        )
                       : [];
 
                   return (
@@ -753,6 +844,7 @@ export default function Chat() {
                   );
                 }
                 if (part.type === "tool-suggest_followups") {
+                  if (latestControllerState) return null;
                   if (hasFinalDispositionResult(msg)) return null;
                   const tp = part as ToolPart;
                   const opts = tp.output?.options;
@@ -764,7 +856,10 @@ export default function Chat() {
                   const questionText = lastText && "text" in lastText ? lastText.text : "";
                   const replyOptions = normalizeQuickReplyOptions(
                     questionText,
-                    opts as string[]
+                    getControllerQuickReplyOptions(
+                      messageControllerState,
+                      opts as string[]
+                    )
                   );
                   const isLast = msg.id === messages[messages.length - 1]?.id;
                   if (!isLast) return null;
@@ -797,6 +892,14 @@ export default function Chat() {
                     <ToolResult
                       key={`${msg.id}-${i}`}
                       part={part as ToolPart}
+                    />
+                  );
+                }
+                if (isControllerDataPart(part) && part.data) {
+                  return (
+                    <ControllerResultCards
+                      key={`${msg.id}-${i}`}
+                      snapshot={part.data}
                     />
                   );
                 }

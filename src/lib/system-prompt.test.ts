@@ -7,21 +7,18 @@ describe("SYSTEM_PROMPT clinical safety framing", () => {
     expect(SYSTEM_PROMPT).toContain("does not make independent clinical decisions");
   });
 
-  it("requires early rule-out to call disposition before HEART scoring", () => {
+  it("requires early rule-out to be finalized by the controller before HEART scoring", () => {
     expect(SYSTEM_PROMPT).toContain(
-      "If `evaluate_troponin` returns `early_rule_out_eligible: true`"
+      "If the controller snapshot reports `early_rule_out_eligible: true`"
     );
     expect(SYSTEM_PROMPT).toContain(
-      "call `determine_disposition` immediately before asking any HEART score questions"
+      "Do not continue to HEART scoring unless the controller requires it"
     );
   });
 
-  it("forbids evaluating troponin before an explicit HST value is provided", () => {
+  it("forbids treating non-troponin answers as HST values", () => {
     expect(SYSTEM_PROMPT).toContain(
-      "NEVER call `evaluate_troponin` until the physician has explicitly provided an HST, hs-TnI, or troponin value"
-    );
-    expect(SYSTEM_PROMPT).toContain(
-      "Do not treat symptom duration, onset time, ESRD answers, ongoing-pain answers, sex, or clinical suspicion as a troponin value"
+      "NEVER treat symptom duration, onset time, ESRD answers, ongoing-pain answers, sex, or clinical suspicion as a troponin value"
     );
   });
 
@@ -30,7 +27,7 @@ describe("SYSTEM_PROMPT clinical safety framing", () => {
       "NEVER infer clinical suspicion from symptoms or documentation text"
     );
     expect(SYSTEM_PROMPT).toContain(
-      "Clinical suspicion for ACS: Low, Moderate, or High?"
+      "If the controller asks \"Clinical suspicion for ACS?\", ask only that question"
     );
   });
 
@@ -41,21 +38,18 @@ describe("SYSTEM_PROMPT clinical safety framing", () => {
     expect(SYSTEM_PROMPT).toContain("Do not ask the same yes/no question again");
   });
 
-  it("accepts a typed HST value as its own source text", () => {
+  it("accepts a typed HST value as enough source text for the controller", () => {
     expect(SYSTEM_PROMPT).toContain(
-      "If the physician types an HST/hs-TnI/troponin answer such as \"3 ng/L hs-TnI\""
-    );
-    expect(SYSTEM_PROMPT).toContain(
-      "Do not ask for a separate source unless the answer lacks any HST, hs-TnI, troponin, or ng/L wording"
+      "A typed answer like \"3 ng/L hs-TnI\" is enough source text"
     );
   });
 
   it("stops after a final non-pending disposition", () => {
     expect(SYSTEM_PROMPT).toContain(
-      "After `determine_disposition` returns a final risk other than \"PENDING\""
+      "After the server controller returns a final risk other than \"PENDING\""
     );
     expect(SYSTEM_PROMPT).toContain(
-      "do not call `suggest_followups` after a final disposition"
+      "do not offer buttons after a final disposition"
     );
   });
 
@@ -70,7 +64,7 @@ describe("SYSTEM_PROMPT clinical safety framing", () => {
       "Do not add a second text block that restates the same question"
     );
     expect(SYSTEM_PROMPT).toContain(
-      "Do not call `suggest_followups` for free-text numeric/time questions"
+      "Do not request buttons for free-text numeric/time questions"
     );
   });
 });

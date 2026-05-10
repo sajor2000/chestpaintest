@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   cleanQuickReplyPromptText,
   cleanRepeatedQuestionText,
+  getControllerPathwayStep,
+  getControllerQuickReplyOptions,
   getStepGuidance,
   getPathwayStep,
   isDuplicateQuickReplyPromptText,
   normalizeQuickReplyOptions,
 } from "./pathway-ui";
+import type { PathwayControllerSnapshot } from "./pathway-controller";
 
 describe("normalizeQuickReplyOptions", () => {
   it("replaces stale sex buttons when the visible question asks about ESRD", () => {
@@ -264,6 +267,36 @@ describe("getPathwayStep", () => {
     expect(getPathwayStep("How many hours have the symptoms been present?")).toBe(
       "basics"
     );
+  });
+});
+
+describe("controller-owned UI state", () => {
+  const controllerSnapshot = {
+    step: "basics",
+    requiredField: "isEsrd",
+    allowedOptions: ["Yes - ESRD", "No ESRD"],
+    terminal: false,
+  } as PathwayControllerSnapshot;
+
+  it("uses the controller step instead of assistant text inference", () => {
+    expect(
+      getControllerPathwayStep(controllerSnapshot, "Does the EKG show STEMI?")
+    ).toBe("basics");
+  });
+
+  it("uses controller quick replies over stale model or tool options", () => {
+    expect(
+      getControllerQuickReplyOptions(controllerSnapshot, ["Male", "Female"])
+    ).toEqual(["Yes - ESRD", "No ESRD"]);
+  });
+
+  it("suppresses quick replies when the controller state is terminal", () => {
+    expect(
+      getControllerQuickReplyOptions(
+        { ...controllerSnapshot, terminal: true },
+        ["Yes - ESRD", "No ESRD"]
+      )
+    ).toEqual([]);
   });
 });
 

@@ -11,6 +11,7 @@
  * - Terminal dispositions: Low, Intermediate, Chronic Injury, High, Pending repeat/4hr
  */
 import { describe, expect, it } from "vitest";
+import type { UIMessage } from "ai";
 
 import {
   assessEkg,
@@ -18,6 +19,7 @@ import {
   determineDisposition,
   evaluateTroponin,
 } from "../lib/tools";
+import { resolvePathwayController } from "../lib/pathway-controller";
 
 const toolCtx = {
   toolCallId: "decision-tree-audit",
@@ -89,6 +91,176 @@ const disposition = ({ messages, ...args }: DispositionArgs) =>
         ? [{ role: "user" as const, content: "Clinical suspicion for ACS: low." }]
         : []),
   });
+
+const userMessage = (text: string): UIMessage => ({
+  id: crypto.randomUUID(),
+  role: "user",
+  parts: [{ type: "text", text }],
+});
+
+const controller = (text: string) => resolvePathwayController([userMessage(text)]);
+
+const baseControllerText =
+  "No STEMI. No ischemic changes. Male. No ESRD. Symptoms started 5 hours ago.";
+const serialMinimalText = `${baseControllerText} 0-hour HST is 6 ng/L. 2-hour HST is 8 ng/L. 2-hour repeat EKG ischemic changes: no.`;
+const serialSignificantText = `${baseControllerText} 0-hour HST is 6 ng/L. 2-hour HST is 21 ng/L. 2-hour repeat EKG ischemic changes: no. No ongoing chest pain.`;
+const heartLowText =
+  "No ongoing chest pain. HEART components: history 0, EKG 0, age 1, risk factors 1, troponin 0.";
+const heartIntermediateText =
+  "No ongoing chest pain. HEART components: history 1, EKG 1, age 1, risk factors 1, troponin 0. No recent normal cardiac testing and no known chronic unchanged HST.";
+
+const controllerCases = [
+  {
+    name: "01 STEMI/EQV routes immediately to STEMI pathway",
+    text: "Yes - STEMI",
+    expected: { terminal: true, resultKind: "assess_ekg", action: "STEMI_PATHWAY" },
+  },
+  {
+    name: "02 no STEMI with ischemic ST/T changes flags cardiology consult and high-risk disposition",
+    text: "No STEMI. Yes ischemic changes. Male. No ESRD. Symptoms started 5 hours ago. 0-hour HST is 6 ng/L. 2-hour HST is 8 ng/L. 2-hour repeat EKG ischemic changes: no. No ongoing chest pain.",
+    expected: { terminal: true, risk: "HIGH" },
+  },
+  {
+    name: "03 no STEMI and no ischemic ST/T changes continues to troponin workup",
+    text: "No STEMI. No ischemic changes.",
+    expected: { requiredField: "sex" },
+  },
+  {
+    name: "04 male HST at 35 ng/L is at or above the male 99% URL",
+    text: `${baseControllerText} 0-hour HST is 35 ng/L.`,
+    expected: { requiredField: "hst2", aboveUrl: true },
+  },
+  {
+    name: "05 female HST at 14 ng/L is at or above the female 99% URL",
+    text: "No STEMI. No ischemic changes. Female. No ESRD. Symptoms started 5 hours ago. 0-hour HST is 14 ng/L.",
+    expected: { requiredField: "hst2", aboveUrl: true },
+  },
+  {
+    name: "06 early rule-out criteria route to low risk with NPV footnote",
+    text: `${baseControllerText} 0-hour HST is 3 ng/L. Clinical suspicion for ACS: low.`,
+    expected: { terminal: true, risk: "LOW" },
+  },
+  {
+    name: "07 HST equal to 5 ng/L does not meet the less-than-5 early rule-out gate",
+    text: `${baseControllerText} 0-hour HST is 5 ng/L. Clinical suspicion for ACS: low.`,
+    expected: { requiredField: "hst2" },
+  },
+  {
+    name: "08 symptom duration equal to 3 hours does not meet the greater-than-3-hour gate",
+    text: "No STEMI. No ischemic changes. Male. No ESRD. Symptoms started 3 hours ago. 0-hour HST is 3 ng/L. Clinical suspicion for ACS: low.",
+    expected: { requiredField: "hst2" },
+  },
+  {
+    name: "09 moderate suspicion blocks early rule-out despite HST less than 5 and symptoms over 3 hours",
+    text: `${baseControllerText} 0-hour HST is 3 ng/L. Clinical suspicion for ACS: moderate.`,
+    expected: { requiredField: "hst2" },
+  },
+  {
+    name: "10 missing explicit low-suspicion answer keeps early rule-out pending for clinician answer",
+    text: `${baseControllerText} 0-hour HST is 3 ng/L.`,
+    expected: { requiredField: "clinicalSuspicion" },
+  },
+  {
+    name: "11 ESRD blocks early rule-out and emits the ESRD footnote",
+    text: "No STEMI. No ischemic changes. Male. Yes ESRD. Symptoms started 5 hours ago. 0-hour HST is 3 ng/L. Clinical suspicion for ACS: low.",
+    expected: { requiredField: "hst2" },
+  },
+  {
+    name: "12 0-hour HST above 200 emits the PPV 70% footnote",
+    text: `${baseControllerText} 0-hour HST is 201 ng/L.`,
+    expected: { requiredField: "hst2", ppvFlag: true },
+  },
+  {
+    name: "13 delta less than 4 ng/L stays in the minimal delta lane",
+    text: serialMinimalText,
+    expected: { requiredField: "ongoingChestPain", delta: "minimal" },
+  },
+  {
+    name: "14 delta equal to 4 ng/L enters the intermediate 4-hour lane",
+    text: `${baseControllerText} 0-hour HST is 6 ng/L. 2-hour HST is 10 ng/L. 2-hour repeat EKG ischemic changes: no.`,
+    expected: { requiredField: "hst4", delta: "intermediate" },
+  },
+  {
+    name: "15 delta equal to 14 ng/L remains intermediate and does not become significant",
+    text: `${baseControllerText} 0-hour HST is 6 ng/L. 2-hour HST is 20 ng/L. 2-hour repeat EKG ischemic changes: no.`,
+    expected: { requiredField: "hst4", delta: "intermediate" },
+  },
+  {
+    name: "16 delta equal to 15 ng/L is clinically significant by the absolute rule",
+    text: serialSignificantText,
+    expected: { terminal: true, risk: "HIGH", delta: "significant" },
+  },
+  {
+    name: "17 falling delta of at least 15 ng/L is significant per footnote G",
+    text: `${baseControllerText} 0-hour HST is 30 ng/L. 2-hour HST is 10 ng/L. 2-hour repeat EKG ischemic changes: no. No ongoing chest pain.`,
+    expected: { terminal: true, risk: "HIGH", delta: "significant" },
+  },
+  {
+    name: "18 HST at or above 100 uses the 20% rule; 19% is not significant",
+    text: `${baseControllerText} 0-hour HST is 100 ng/L. 2-hour HST is 119 ng/L. 2-hour repeat EKG ischemic changes: no.`,
+    expected: { requiredField: "hst4", delta: "intermediate" },
+  },
+  {
+    name: "19 HST at or above 100 uses the 20% rule; exactly 20% is significant",
+    text: `${baseControllerText} 0-hour HST is 100 ng/L. 2-hour HST is 120 ng/L. 2-hour repeat EKG ischemic changes: no. No ongoing chest pain.`,
+    expected: { terminal: true, risk: "HIGH", delta: "significant" },
+  },
+  {
+    name: "20 intermediate delta below the 99% URL stays pending until 4-hour HST and repeat EKG",
+    text: `${baseControllerText} 0-hour HST is 6 ng/L. 2-hour HST is 10 ng/L. 2-hour repeat EKG ischemic changes: no.`,
+    expected: { requiredField: "hst4" },
+  },
+  {
+    name: "21 4-hour follow-up after intermediate 2-hour delta can route low when final criteria are met",
+    text: `${baseControllerText} 0-hour HST is 3 ng/L. Clinical suspicion for ACS: moderate. 2-hour HST is 10 ng/L. 2-hour repeat EKG ischemic changes: no. 4-hour HST is 5 ng/L. 4-hour repeat EKG ischemic changes: no. ${heartLowText}`,
+    expected: { terminal: true, risk: "LOW" },
+  },
+  {
+    name: "22 symptoms under 4 hours with minimal delta require repeat HST before final disposition",
+    text: "No STEMI. No ischemic changes. Male. No ESRD. Symptoms started 3.5 hours ago. 0-hour HST is 6 ng/L. 2-hour HST is 8 ng/L. 2-hour repeat EKG ischemic changes: no.",
+    expected: { requiredField: "hst4" },
+  },
+  {
+    name: "23 below-URL minimal-delta path routes low risk when HEART score is less than 4",
+    text: `${serialMinimalText} ${heartLowText}`,
+    expected: { terminal: true, risk: "LOW" },
+  },
+  {
+    name: "24 below-URL minimal-delta path routes low risk with recent normal testing even when HEART is at least 4",
+    text: `${serialMinimalText} No ongoing chest pain. HEART components: history 1, EKG 1, age 1, risk factors 1, troponin 0. Recent normal cardiac testing is present.`,
+    expected: { terminal: true, risk: "LOW" },
+  },
+  {
+    name: "25 below-URL minimal-delta path routes low risk with chronic unchanged HST even when HEART is at least 4",
+    text: `${serialMinimalText} No ongoing chest pain. HEART components: history 1, EKG 1, age 1, risk factors 1, troponin 0. No recent normal cardiac testing. Chronic unchanged HST is known.`,
+    expected: { terminal: true, risk: "LOW" },
+  },
+  {
+    name: "26 below-URL minimal-delta path routes intermediate when no low-risk OR criteria are present",
+    text: `${serialMinimalText} ${heartIntermediateText}`,
+    expected: { terminal: true, risk: "INTERMEDIATE" },
+  },
+  {
+    name: "27 above-URL troponin without significant delta routes to chronic injury",
+    text: "No STEMI. No ischemic changes. Male. No ESRD. Symptoms started 5 hours ago. 0-hour HST is 35 ng/L. 2-hour HST is 36 ng/L. 2-hour repeat EKG ischemic changes: no. No ongoing chest pain.",
+    expected: { terminal: true, risk: "CHRONIC_INJURY" },
+  },
+  {
+    name: "28 above-URL troponin with significant delta routes high risk to cardiology evaluation",
+    text: "No STEMI. No ischemic changes. Male. No ESRD. Symptoms started 5 hours ago. 0-hour HST is 35 ng/L. 2-hour HST is 55 ng/L. 2-hour repeat EKG ischemic changes: no. No ongoing chest pain.",
+    expected: { terminal: true, risk: "HIGH" },
+  },
+  {
+    name: "29 ongoing cardiac chest pain independently routes high risk",
+    text: `${serialMinimalText} Yes - ongoing chest pain.`,
+    expected: { terminal: true, risk: "HIGH" },
+  },
+  {
+    name: "30 ESRD double-lock prevents accidental early-rule-out disposition",
+    text: "No STEMI. No ischemic changes. Male. Yes ESRD. Symptoms started 5 hours ago. 0-hour HST is 3 ng/L. Clinical suspicion for ACS: low.",
+    expected: { requiredField: "hst2" },
+  },
+];
 
 describe("original pathway decision tree audit — 30 named cases", () => {
   it("01 STEMI/EQV routes immediately to STEMI pathway", async () => {
@@ -430,5 +602,60 @@ describe("original pathway decision tree audit — 30 named cases", () => {
     expect(result.risk).toBe("HIGH");
     expect(result.disposition).toContain("ESRD patients cannot use early rule-out");
     expect(result.footnotes).toContain("ALL ESRD patients need 2hr HST.");
+  });
+});
+
+describe("server-owned controller decision tree audit — 30 named cases", () => {
+  it.each(controllerCases)("$name", async ({ text, expected }) => {
+    const snapshot = await controller(text);
+
+    if ("requiredField" in expected) {
+      expect(snapshot.requiredField).toBe(expected.requiredField);
+      expect(snapshot.terminal).toBe(false);
+    }
+    if ("terminal" in expected) {
+      expect(snapshot.terminal).toBe(expected.terminal);
+    }
+    if ("action" in expected) {
+      expect(snapshot.results.at(-1)?.data).toMatchObject({
+        action: expected.action,
+      });
+    }
+    if ("risk" in expected) {
+      expect(snapshot.results.at(-1)?.data).toMatchObject({
+        risk: expected.risk,
+      });
+    }
+    if ("aboveUrl" in expected) {
+      expect(
+        snapshot.results.some(
+          (result) =>
+            result.kind === "evaluate_troponin" &&
+            result.hour === "0" &&
+            result.data.above_url === expected.aboveUrl
+        )
+      ).toBe(true);
+    }
+    if ("ppvFlag" in expected) {
+      expect(
+        snapshot.results.some(
+          (result) =>
+            result.kind === "evaluate_troponin" &&
+            Array.isArray(result.data.flags) &&
+            result.data.flags.some((flag) =>
+              String(flag).includes("PPV 70%")
+            )
+        )
+      ).toBe(true);
+    }
+    if ("delta" in expected) {
+      expect(
+        snapshot.results.some(
+          (result) =>
+            result.kind === "calculate_delta" &&
+            result.data.delta_category === expected.delta
+        )
+      ).toBe(true);
+    }
   });
 });

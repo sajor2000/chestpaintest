@@ -1,4 +1,6 @@
 import {
+  createUIMessageStream,
+  createUIMessageStreamResponse,
   streamText,
   convertToModelMessages,
   stepCountIs,
@@ -9,16 +11,11 @@ import {
   sanitizeClientMessages,
 } from "@/lib/chat-request";
 import { createAssistantTextCleanupTransform } from "@/lib/assistant-stream";
-import { buildPathwayStatePrompt } from "@/lib/pathway-state";
-import { SYSTEM_PROMPT } from "@/lib/system-prompt";
 import {
-  assessEkg,
-  evaluateTroponin,
-  calculateDelta,
-  calculateHeartScore,
-  determineDisposition,
-  suggestFollowups,
-} from "@/lib/tools";
+  buildPathwayControllerPrompt,
+  resolvePathwayController,
+} from "@/lib/pathway-controller";
+import { SYSTEM_PROMPT } from "@/lib/system-prompt";
 
 const MAX_CHAT_REQUEST_BODY_BYTES = 2_000_000;
 
@@ -61,21 +58,25 @@ export async function POST(req: Request) {
     );
   }
 
+  const controllerSnapshot = await resolvePathwayController(messages);
   const result = streamText({
     model: getModel(),
-    system: `${SYSTEM_PROMPT}\n\n${buildPathwayStatePrompt(messages)}`,
+    system: `${SYSTEM_PROMPT}\n\n${buildPathwayControllerPrompt(controllerSnapshot)}`,
     messages: await convertToModelMessages(messages),
     stopWhen: stepCountIs(10),
     experimental_transform: () => createAssistantTextCleanupTransform(),
-    tools: {
-      assess_ekg: assessEkg,
-      evaluate_troponin: evaluateTroponin,
-      calculate_delta: calculateDelta,
-      calculate_heart_score: calculateHeartScore,
-      determine_disposition: determineDisposition,
-      suggest_followups: suggestFollowups,
+  });
+
+  const stream = createUIMessageStream({
+    execute: ({ writer }) => {
+      writer.write({
+        type: "data-pathway-state",
+        id: "pathway-state",
+        data: controllerSnapshot,
+      });
+      writer.merge(result.toUIMessageStream());
     },
   });
 
-  return result.toUIMessageStreamResponse();
+  return createUIMessageStreamResponse({ stream });
 }

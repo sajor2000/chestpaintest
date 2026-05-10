@@ -10,13 +10,14 @@ This audit covers the current Next.js chest pain clinical decision support app, 
 
 ## Architecture Summary
 
-- The browser UI in `src/app/page.tsx` guides the clinician through the pathway, renders deterministic tool outputs, and normalizes quick-reply buttons so stale button sets do not persist across pathway questions.
-- The chat route in `src/app/api/chat/route.ts` validates request size before JSON parsing, sanitizes browser-supplied messages, and registers the deterministic clinical tools used by the LLM.
+- The browser UI in `src/app/page.tsx` guides the clinician through the pathway, renders deterministic controller outputs, and uses server-owned quick-reply buttons so stale button sets do not persist across pathway questions.
+- The chat route in `src/app/api/chat/route.ts` validates request size before JSON parsing, sanitizes browser-supplied messages, resolves the deterministic pathway controller, and streams a persistent `data-pathway-state` part before model guidance text.
 - `src/lib/chat-request.ts` strips non-user messages and keeps only user-owned text plus valid image data URLs, reducing the risk of forged assistant/tool history from the browser.
 - `src/lib/tools.ts` owns clinical calculations for EKG routing, troponin thresholds, delta logic, HEART score, disposition, and follow-up suggestions.
-- `src/lib/system-prompt.ts` instructs the model to ask one pathway question at a time and to use tools for every clinical calculation.
+- `src/lib/pathway-controller.ts` recomputes canonical state from sanitized messages on every request, runs deterministic clinical tools server-side, chooses the current required field, and emits canonical quick replies/results.
+- `src/lib/system-prompt.ts` instructs the model to ask only the controller-selected question and to explain, not compute, pathway logic.
 - `src/lib/pathway-state.ts` adds an intermediate prompt-backed state guardrail that extracts accepted clinician fields, prefers later corrections, avoids unsafe HEART parsing shortcuts, and supplies the current required field to the model.
-- `src/lib/pathway-ui.ts` infers the visible pathway step from assistant text and fixes known quick-reply button mismatches.
+- `src/lib/pathway-ui.ts` uses controller-owned active steps and quick replies first, with assistant-text inference retained only as fallback for older messages.
 
 ## Verification Evidence
 
@@ -30,13 +31,14 @@ npm audit --omit=dev
 npm run audit:prod:browser
 ```
 
-Current expected suite coverage is 186 Vitest tests:
+Current expected suite coverage is 229 Vitest tests:
 
 - 87 deterministic pathway tests for Rush hs-TnI thresholds, explicit troponin source validation, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
-- 30 named original decision-tree audit cases covering STEMI/EQV, ischemic EKG, sex-specific URL thresholds, early rule-out gates, ESRD exclusions, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain.
-- 13 chat request sanitization tests, including symptom-duration normalization for alternate "how many hours" phrasing.
-- 35 pathway UI workflow tests, including stale-button suppression for HST and symptom timing prompts, fallback buttons when the model omits the button tool, terminal STEMI result button suppression, final disposition cards, duplicate quick-reply prompt cleanup, repeated question cleanup, physician-facing step guidance, and stale prompt text suppression after hidden buttons.
-- 2 chat route tests covering request-size guarding and injection of prompt-backed pathway state.
+- 30 named original decision-tree tool cases plus 30 matching server-owned controller cases covering STEMI/EQV, ischemic EKG, sex-specific URL thresholds, early rule-out gates, ESRD exclusions, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain.
+- 14 chat request sanitization tests, including symptom-duration normalization for alternate "how many hours" phrasing and repeat-EKG answer normalization.
+- 38 pathway UI workflow tests, including controller-owned active step/buttons, stale-button suppression for HST and symptom timing prompts, fallback buttons when the model omits the button tool, terminal STEMI result button suppression, final disposition cards, duplicate quick-reply prompt cleanup, repeated question cleanup, physician-facing step guidance, and stale prompt text suppression after hidden buttons.
+- 2 chat route tests covering request-size guarding and streaming canonical `data-pathway-state`.
+- 9 deterministic pathway controller tests covering canonical required fields, correction precedence, terminal STEMI, early rule-out, pending 4hr routing, HEART sequencing, low-risk qualifiers, and HEART false-positive parsing guards.
 - 2 assistant stream cleanup tests covering server-side removal of forbidden button filler, including filler split across streamed token chunks.
 - 8 prompt-backed pathway state tests covering accepted-field extraction, latest correction precedence, normalized ESRD false parsing, and HEART false-positive parsing guards.
 - 8 system prompt safety-framing tests that require protocol-only wording, early rule-out flow, explicit troponin value gating, typed yes/no progression, typed HST source handling, explicit suspicion gating, final-disposition stop behavior, and clean quick-reply wording.
@@ -56,13 +58,13 @@ After any commit is pushed, confirm both remote checks:
 - Significant deltas now return a structured clinical flag, math summary, pathway logic summary, and recommendations for the UI.
 - Low-risk discharge results now return discharge recommendations and chest pain onset/symptom charting prompts.
 - The system prompt and UI now state that the app surfaces the prespecified Rush hs-TnI protocol and does not make independent clinical decisions.
-- The current workflow step is still inferred in the UI from assistant text. This is useful for presentation, but it is not a deterministic server-owned pathway session.
-- The API now adds an intermediate prompt-backed pathway state guardrail that parses clinician-provided fields, prefers later corrections, and tells the model not to re-ask for accepted fields. This is a guardrail, not the final session controller.
+- The API now uses a stateless deterministic server-owned pathway controller that parses clinician-provided fields, prefers later corrections, streams canonical state/results/buttons, and binds the model to the server-selected required field.
+- Prompt-backed state parsing remains available as a parser layer, but pathway control no longer depends on model phrasing or conversation text cleanup.
 - Unsafe single-letter HEART aliases were removed from free-text parsing so `age 1` and `2-hour HST` cannot populate unrelated HEART components.
 - Quick-reply UX was tightened so the prompt asks the model not to repeat button labels in prose, and HEART score card labels now wrap instead of truncating clinical labels.
 - The UI now includes a guided-CDS panel that makes the original pathway easier to follow by showing the current node, needed clinician input, pathway rationale, and guardrail.
-- Live production browser audit is available through `npm run audit:prod:browser`; it exercises STEMI, ESRD, and one typed low-risk pathway flow against the deployed URL and writes screenshots to ignored `output/playwright/` artifacts.
-- The next major safety improvement is a deterministic pathway session controller that returns canonical `step`, `question`, `allowedOptions`, accepted fields, and tool-derived clinical results.
+- Live production browser audit is available through `npm run audit:prod:browser`; it exercises STEMI, ESRD, one typed low-risk pathway flow, and the API `data-pathway-state` controller seam against the target URL, then writes screenshots to ignored `output/playwright/` artifacts.
+- The next major safety improvement is durable authenticated persistence/audit trail around the stateless controller before Epic or clinical production use.
 
 ## Current Release Verification (2026-05-10)
 
@@ -75,7 +77,7 @@ After any commit is pushed, confirm both remote checks:
   - `npm run lint`
   - `npm run build`
   - `npm run audit:prod:browser`
-- Live production browser audit exercises STEMI, ESRD, and one typed low-risk pathway flow against the deployed URL and writes screenshots to ignored `output/playwright/` artifacts.
+- Live production browser audit exercises STEMI, ESRD, one typed low-risk pathway flow, and the API `data-pathway-state` controller seam against the deployed URL, then writes screenshots to ignored `output/playwright/` artifacts.
 
 ## PDF Fidelity Audit (2026-05-08)
 
@@ -91,14 +93,14 @@ A node-by-node audit was performed against `public/troponin-pathway.png`. Seven 
 
 ### LLM Anti-Bypass Hardening
 
-Sixteen system prompt safety rules now prevent the LLM from deviating:
-- Rules 1-6: No computing without tools, no fabricating values, no skipping steps.
-- Rule 7: PENDING results must be followed (collect data, re-call tool).
-- Rule 8: `delta_range` must come from `calculate_delta` output verbatim.
-- Rule 9: `early_rule_out` only true if `evaluate_troponin` said eligible.
+Sixteen system prompt safety rules now keep the LLM in a guide-only role:
+- Rules 1-6: No model-side computing, no fabricating values, no skipping steps.
+- Rule 7: PENDING results must follow the controller-required field.
+- Rule 8: controller-owned `delta_range` is authoritative.
+- Rule 9: early rule-out can only be described when the controller reports it.
 - Rule 10: Results must be framed as prespecified protocol output.
-- Rule 11: Early rule-out must call disposition before HEART scoring.
-- Rule 12: `evaluate_troponin` cannot be called until an explicit HST/hs-TnI/troponin value is provided.
+- Rule 11: Early rule-out must be resolved by the controller before HEART scoring.
+- Rule 12: Non-troponin answers cannot be treated as HST values.
 - Rule 13: Clinical suspicion must not be inferred from symptoms or documentation text.
 - Rule 14: Plain typed yes/no answers must advance the current ESRD or ongoing chest-pain question.
 - Rule 15: A typed HST/hs-TnI/troponin value can serve as its own source text.
@@ -110,8 +112,8 @@ All 7 PDF footnotes (A-G) are emitted by at least one tool.
 
 - `calculateHeartScore` now returns human-readable `labels` for each component (e.g., "Moderately suspicious", "1–2 risk factors").
 - `HeartScoreCard` component in `page.tsx` renders a visual 5-row breakdown with score indicators (0/1/2 circles), labels, and risk-level color coding (emerald/amber/red).
-- System prompt includes a detailed HEART Score Elicitation Guide with per-component scoring criteria, suggested button labels, and instructions for the LLM to help clinicians think through each component.
-- The LLM suggests troponin scoring based on prior HST values but always asks the clinician to confirm.
+- System prompt includes a detailed HEART Score Elicitation Guide with per-component scoring criteria and instructions for the LLM to help clinicians think through each component.
+- The LLM may explain how the troponin component relates to prior HST values, but the clinician chooses the score and the controller calculates the total.
 - Delta rule system prompt wording corrected: "20% rule replaces (not supplements) the absolute threshold at high values" — matches the switching implementation in `calculateDelta`.
 
 ### Final Audit (2026-05-08)
@@ -125,7 +127,7 @@ Do not treat the app as ready for public clinical production use until these are
 - Validate the implementation against the official Rush pathway source with a clinical owner.
 - Add institutional access control before public or Epic-embedded use.
 - Add persistence and audit trail support before relying on the app for durable clinical documentation.
-- Replace prompt-backed pathway state guidance and inferred UI pathway state with a deterministic session controller before high-stakes use.
+- Add durable authenticated persistence and audit trail around the stateless deterministic controller before high-stakes use.
 
 ## Deployment Notes
 

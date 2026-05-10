@@ -262,7 +262,10 @@ async function runBrowserAudit(browser) {
     await clickButton(page, "Yes - ischemic changes");
     await clickButton(page, "Male");
     await clickButton(page, "No ESRD");
-    await waitForMessageText(page, /symptom duration|duration of symptoms/i);
+    await waitForMessageText(
+      page,
+      /symptom duration|duration of symptoms|how many hours|symptoms.*present/i
+    );
     await assertNoEnabledButtons(page, ["Yes - ESRD", "No ESRD"]);
     await assertNoDuplicatePromptFiller(page);
     const file = await screenshot(page, "esrd-advanced");
@@ -344,6 +347,27 @@ async function postChat(messages) {
   throw lastError;
 }
 
+function streamDataParts(streamText) {
+  return streamText
+    .split(/\n+/)
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => line.slice("data: ".length).trim())
+    .filter((line) => line && line !== "[DONE]")
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        return [];
+      }
+    });
+}
+
+function pathwayStatePart(streamText) {
+  return streamDataParts(streamText).find(
+    (part) => part.type === "data-pathway-state"
+  )?.data;
+}
+
 function uiMessage(id, role, text) {
   return { id, role, parts: [{ type: "text", text }] };
 }
@@ -359,12 +383,50 @@ async function runApiAudit() {
     return "POST /api/chat start prompt passed";
   });
 
+  await runStep("production API exposes deterministic controller state", async () => {
+    const stream = await postChat([
+      uiMessage(
+        "u1",
+        "user",
+        "No STEMI. No ischemic changes. Male. No ESRD. Symptoms started 4 hours ago. 0-hour HST is 3 ng/L."
+      ),
+    ]);
+    const state = pathwayStatePart(stream);
+    assert(state, "stream did not include data-pathway-state");
+    assert(
+      state.requiredField === "clinicalSuspicion",
+      `expected clinicalSuspicion, got ${state.requiredField}`
+    );
+    assert(
+      Array.isArray(state.allowedOptions) &&
+        state.allowedOptions.join(",") === "Low,Moderate,High",
+      `unexpected controller buttons: ${JSON.stringify(state.allowedOptions)}`
+    );
+    assert(
+      state.results?.some(
+        (result) =>
+          result.kind === "evaluate_troponin" &&
+          result.data?.needs_clinical_suspicion === true
+      ),
+      "controller did not expose deterministic troponin result"
+    );
+    return "POST /api/chat controller state passed";
+  });
+
   await runStep("production API STEMI path returns terminal STEMI language", async () => {
     const stream = await postChat([
       uiMessage("u1", "user", "Start the Rush hs-TnI pathway."),
       uiMessage("a1", "assistant", "Does the EKG show STEMI or STEMI equivalent?"),
       uiMessage("u2", "user", "Yes - STEMI"),
     ]);
+    const state = pathwayStatePart(stream);
+    assert(state?.terminal === true, "STEMI controller state was not terminal");
+    assert(
+      state?.results?.some(
+        (result) => result.kind === "assess_ekg" && result.data?.action === "STEMI_PATHWAY"
+      ),
+      "STEMI controller state did not include STEMI_PATHWAY result"
+    );
     assert(/STEMI/i.test(stream), "STEMI response did not mention STEMI");
     assert(/pathway|activate|protocol stops/i.test(stream), "STEMI response did not look terminal");
     return "POST /api/chat STEMI terminal smoke passed";
@@ -372,8 +434,8 @@ async function runApiAudit() {
 
   record(
     "30 canonical decision-tree cases production API representation",
-    "warn",
-    `${CANONICAL_DECISION_TREE_CASES.length} canonical cases remain verified by src/__tests__/pathway-decision-tree-30.test.ts; the live chat API has no deterministic tool-call injection seam, so the harness reports this instead of treating nondeterministic LLM replay as proof.`
+    "pass",
+    `${CANONICAL_DECISION_TREE_CASES.length} canonical cases are verified by src/__tests__/pathway-decision-tree-30.test.ts, and the live API now exposes the deterministic data-pathway-state controller seam for production smoke checks.`
   );
 }
 

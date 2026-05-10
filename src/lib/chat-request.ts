@@ -62,6 +62,22 @@ function normalizeTextForPathwayContext(
   }
 
   if (
+    question.includes("repeat") &&
+    question.includes("ekg") &&
+    question.includes("ischemic")
+  ) {
+    if (yesNo) {
+      const timepoint =
+        question.match(/\b(2|4)[-\s]?(?:hour|hr)\b/)?.[1] ??
+        question.match(/\b(2|4)h\b/)?.[1];
+      const label = timepoint
+        ? `${timepoint}-hour repeat EKG ischemic changes`
+        : "Repeat EKG ischemic changes";
+      return `${label}: ${yesNo}.`;
+    }
+  }
+
+  if (
     question.includes("onset") &&
     question.includes("chest pain") &&
     text.trim().length <= 80
