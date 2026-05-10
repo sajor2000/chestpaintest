@@ -13,7 +13,7 @@ The chatbot walks the physician through the pathway step by step:
 5. **HEART Score** — LLM-guided 5-component scoring with visual breakdown card
 6. **Disposition** — Low (discharge) / Intermediate (observation) / Chronic Injury / High (admit) / Pending (4hr or repeat HST required)
 
-**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions. The current suite has 178 tests, including 87 pathway tool tests plus a 30-case original decision-tree audit that exercises the major Rush hs-TnI branches end to end.
+**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions. The current suite has 180 tests, including 87 pathway tool tests plus a 30-case original decision-tree audit that exercises the major Rush hs-TnI branches end to end.
 
 ## Features
 
@@ -37,7 +37,7 @@ The chatbot walks the physician through the pathway step by step:
 | AI SDK | Vercel AI SDK v6 (`@ai-sdk/azure`, `@ai-sdk/react`) |
 | LLM | Azure OpenAI GPT-4.1-mini (Chat Completions API) |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest (178 tests; 87 pathway tool tests; 30-case decision-tree audit) |
+| Testing | Vitest (180 tests; 87 pathway tool tests; 30-case decision-tree audit) plus a live production browser audit harness |
 | FHIR | SMART on FHIR scaffold; add `fhirclient` during Phase 2 Epic integration |
 
 ## Setup
@@ -85,7 +85,7 @@ Use `.env.example` as the template. Do not commit `.env.local`.
 npx vitest run
 ```
 
-178 tests cover the pathway logic, 30-case original decision-tree audit, request sanitization, route guard, prompt-backed pathway state guardrails, system-prompt safety framing, and pathway UI workflow. The pathway tests verify the Rush hs-TnI pathway PDF branches and boundary values:
+180 tests cover the pathway logic, 30-case original decision-tree audit, request sanitization, route guard, prompt-backed pathway state guardrails, system-prompt safety framing, pathway UI workflow, and the production browser audit command contract. The pathway tests verify the Rush hs-TnI pathway PDF branches and boundary values:
 - STEMI/EQV diamond routing
 - 99% URL thresholds (boundary values)
 - Early MI rule-out (all 6 gate conditions)
@@ -105,6 +105,14 @@ npx vitest run
 - 30 named decision-tree cases covering STEMI, ischemic EKG, early rule-out, ESRD exclusions, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain
 - Correction precedence and false-positive parser guards for prompt-backed pathway state
 - UI guards that suppress stale ESRD buttons on free-text symptom duration/onset prompts
+
+For live production UI checks, run:
+
+```bash
+npm run audit:prod:browser
+```
+
+The audit defaults to `https://rush-chest-pain-cds.vercel.app` and can be pointed at another deployment with `PROD_BASE_URL=https://... npm run audit:prod:browser`. It drives the rendered app with Playwright, captures screenshots under `output/playwright/`, checks STEMI and ESRD regression flows, exercises one typed low-risk pathway, and reports why the 30 canonical decision-tree cases remain verified by deterministic Vitest coverage rather than nondeterministic live LLM replay.
 
 ## Pre-Deployment
 

@@ -15,6 +15,7 @@ Use this checklist before any public demo, clinical pilot, or production deploy.
 - [ ] Run `npx vitest run src/__tests__/pathway-decision-tree-30.test.ts` and confirm all 30 original decision-tree cases pass.
 - [ ] Run `npx vitest run src/lib/pathway-state.test.ts src/lib/chat-route.test.ts src/lib/system-prompt.test.ts` and confirm parser, route, and prompt guardrails pass.
 - [ ] Run `npm run build` and confirm TypeScript and production build pass.
+- [ ] Run `npm run audit:prod:browser` against the target Vercel URL and confirm the live STEMI, ESRD, and typed low-risk UI flows pass.
 - [ ] Run `npm audit --omit=dev` and review any runtime dependency advisories.
 
 ## Clinical Safety Gate

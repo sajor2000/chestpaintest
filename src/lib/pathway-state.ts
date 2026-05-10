@@ -205,8 +205,8 @@ export function resolvePathwayState(messages: UIMessage[]): PathwayState {
   const isEsrd = latestMatch(texts, (text) =>
     extractBoolean(
       text,
-      /\b(?:yes\s*-\s*)?esrd\b|\bend-stage renal disease\b/gi,
-      /\bno\s+esrd\b|\bnot\s+esrd\b|\bno\s+end-stage renal\b/gi
+      /\besrd\s*:\s*yes\b|\b(?:yes\s*-\s*)?esrd\b|\bend-stage renal disease\b/gi,
+      /\besrd\s*:\s*no\b|\bno\s+esrd\b|\bnot\s+esrd\b|\bno\s+end-stage renal\b/gi
     )
   );
 
@@ -222,8 +222,8 @@ export function resolvePathwayState(messages: UIMessage[]): PathwayState {
   const ongoingChestPain = latestMatch(texts, (text) =>
     extractBoolean(
       text,
-      /\b(?:yes\s*-\s*)?ongoing (?:cardiac )?chest pain\b|\bchest pain is ongoing\b/gi,
-      /\bno ongoing (?:cardiac )?chest pain\b|\bchest pain (?:is )?not ongoing\b|\bno chest pain now\b/gi
+      /\bongoing chest pain answer:\s*yes\b|\b(?:yes\s*-\s*)?ongoing (?:cardiac )?chest pain\b|\bchest pain is ongoing\b/gi,
+      /\bongoing chest pain answer:\s*no\b|\bno ongoing (?:cardiac )?(?:chest )?pain\b|\bchest pain (?:is )?not ongoing\b|\bno chest pain now\b/gi
     )
   );
 

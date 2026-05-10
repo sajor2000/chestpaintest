@@ -80,6 +80,21 @@ describe("server-owned pathway state", () => {
     expect(state.fields.chronicUnchangedHst).toBe(true);
   });
 
+  it("treats normalized no-ESRD answers as false instead of matching ESRD as present", () => {
+    const state = resolvePathwayState([
+      userMessage("No STEMI. No ischemic changes. Patient sex: male."),
+      userMessage("ESRD: no. This is not an HST/troponin value."),
+      userMessage(
+        "Symptom duration: 4 hours. This is not an HST/troponin value."
+      ),
+    ]);
+
+    expect(state.fields.isEsrd).toBe(false);
+    expect(state.fields.symptomDurationHours).toBe(4);
+    expect(state.fields.hst0).toBeUndefined();
+    expect(state.nextAction).toBe("Ask for the 0-hour HST value in ng/L.");
+  });
+
   it("prefers the latest explicit HST correction for each timepoint", () => {
     const state = resolvePathwayState([
       userMessage(

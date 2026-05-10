@@ -27,17 +27,19 @@ npm run lint
 npx vitest run
 npm run build
 npm audit --omit=dev
+npm run audit:prod:browser
 ```
 
-Current expected suite coverage is 178 Vitest tests:
+Current expected suite coverage is 180 Vitest tests:
 
 - 87 deterministic pathway tests for Rush hs-TnI thresholds, explicit troponin source validation, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
 - 30 named original decision-tree audit cases covering STEMI/EQV, ischemic EKG, sex-specific URL thresholds, early rule-out gates, ESRD exclusions, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain.
 - 12 chat request sanitization tests.
 - 32 pathway UI workflow tests, including stale-button suppression for HST and symptom timing prompts, fallback buttons when the model omits the button tool, terminal STEMI result button suppression, final disposition cards, duplicate quick-reply prompt cleanup, and stale prompt text suppression after hidden buttons.
 - 2 chat route tests covering request-size guarding and injection of prompt-backed pathway state.
-- 7 prompt-backed pathway state tests covering accepted-field extraction, latest correction precedence, and HEART false-positive parsing guards.
+- 8 prompt-backed pathway state tests covering accepted-field extraction, latest correction precedence, normalized ESRD false parsing, and HEART false-positive parsing guards.
 - 8 system prompt safety-framing tests that require protocol-only wording, early rule-out flow, explicit troponin value gating, typed yes/no progression, typed HST source handling, explicit suspicion gating, final-disposition stop behavior, and clean quick-reply wording.
+- 1 production browser audit harness contract test covering the repeatable live production command and safe generated-artifact defaults.
 
 After any commit is pushed, confirm both remote checks:
 
@@ -57,19 +59,21 @@ After any commit is pushed, confirm both remote checks:
 - The API now adds an intermediate prompt-backed pathway state guardrail that parses clinician-provided fields, prefers later corrections, and tells the model not to re-ask for accepted fields. This is a guardrail, not the final session controller.
 - Unsafe single-letter HEART aliases were removed from free-text parsing so `age 1` and `2-hour HST` cannot populate unrelated HEART components.
 - Quick-reply UX was tightened so the prompt asks the model not to repeat button labels in prose, and HEART score card labels now wrap instead of truncating clinical labels.
+- Live production browser audit is available through `npm run audit:prod:browser`; it exercises STEMI, ESRD, and one typed low-risk pathway flow against the deployed URL and writes screenshots to ignored `output/playwright/` artifacts.
 - The next major safety improvement is a deterministic pathway session controller that returns canonical `step`, `question`, `allowedOptions`, accepted fields, and tool-derived clinical results.
 
-## Current PR Status (2026-05-10)
+## Current Release Verification (2026-05-10)
 
-- Branch: `codex/decision-tree-flow-audit`
-- Draft PR: `https://github.com/sajor2000/chestpaintest/pull/2`
-- Local verification passed on the current branch:
+- Branch: `main`
+- Current production URL: `https://rush-chest-pain-cds.vercel.app/`
+- Local verification passed:
   - `npx vitest run src/__tests__/pathway-decision-tree-30.test.ts`
   - `npx vitest run src/lib/pathway-state.test.ts src/lib/chat-route.test.ts src/lib/system-prompt.test.ts`
   - `npx vitest run`
   - `npm run lint`
   - `npm run build`
-- Browser flow was manually checked locally for pathway start, step progression, quick replies, and cleaner clinician guidance.
+  - `npm run audit:prod:browser`
+- Live production browser audit exercises STEMI, ESRD, and one typed low-risk pathway flow against the deployed URL and writes screenshots to ignored `output/playwright/` artifacts.
 
 ## PDF Fidelity Audit (2026-05-08)
 

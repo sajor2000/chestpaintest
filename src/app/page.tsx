@@ -167,6 +167,7 @@ function PathwayRail({ activeStep }: { activeStep: PathwayStepId }) {
   return (
     <nav
       aria-label="hs-TnI pathway progress"
+      data-testid="pathway-rail"
       className="bg-white border-b border-gray-200 px-4 py-2.5 overflow-x-auto shrink-0"
     >
       <ol className="flex min-w-max items-center gap-2">
@@ -540,7 +541,11 @@ export default function Chat() {
       )}
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div
+        ref={scrollRef}
+        data-testid="message-list"
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
+      >
         {messages.length === 0 && (
           <div className="text-center mt-12 space-y-4">
             <div className="w-14 h-14 rounded-2xl bg-[#006332]/10 flex items-center justify-center mx-auto">
@@ -558,6 +563,7 @@ export default function Chat() {
             <div className="flex flex-wrap justify-center gap-2 pt-1">
               <button
                 type="button"
+                data-testid="start-pathway-button"
                 onClick={() => sendMessage({ text: "Start the Rush hs-TnI pathway." })}
                 disabled={isLoading}
                 className="rounded-md bg-[#006332] px-4 py-2 text-xs font-semibold text-white hover:bg-[#004d27] disabled:opacity-40"
@@ -643,6 +649,8 @@ export default function Chat() {
                           {fallbackReplyOptions.map((opt) => (
                             <button
                               key={opt}
+                              data-testid="quick-reply-button"
+                              aria-label={`Quick reply: ${opt}`}
                               disabled={!isLast || isLoading}
                               onClick={() => {
                                 if (!isLast || isLoading) return;
@@ -701,6 +709,8 @@ export default function Chat() {
                       {replyOptions.map((opt) => (
                         <button
                           key={opt}
+                          data-testid="quick-reply-button"
+                          aria-label={`Quick reply: ${opt}`}
                           disabled={!isLast || isLoading}
                           onClick={() => {
                             if (!isLast || isLoading) return;
@@ -734,7 +744,10 @@ export default function Chat() {
         })}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-white shadow-sm border border-gray-100 rounded-2xl px-4 py-3 flex gap-1.5">
+            <div
+              data-testid="loading-indicator"
+              className="bg-white shadow-sm border border-gray-100 rounded-2xl px-4 py-3 flex gap-1.5"
+            >
               <span className="w-2 h-2 bg-[#006332]/40 rounded-full animate-bounce" />
               <span className="w-2 h-2 bg-[#006332]/40 rounded-full animate-bounce [animation-delay:150ms]" />
               <span className="w-2 h-2 bg-[#006332]/40 rounded-full animate-bounce [animation-delay:300ms]" />
@@ -806,6 +819,8 @@ export default function Chat() {
             </svg>
           </button>
           <input
+            data-testid="chat-input"
+            aria-label="Chat input"
             className="flex-1 bg-transparent outline-none text-[14px] text-[#353535] placeholder:text-[#494949]/40"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -814,6 +829,8 @@ export default function Chat() {
           />
           <button
             type="submit"
+            data-testid="chat-send-button"
+            aria-label="Send message"
             disabled={(!input.trim() && !pendingImage) || isLoading}
             className="shrink-0 w-9 h-9 rounded-lg bg-[#006332] text-white flex items-center justify-center disabled:opacity-30 hover:bg-[#004d27] transition-colors"
           >
