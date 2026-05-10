@@ -8,6 +8,10 @@ vi.mock("@/lib/chat-request", async () => {
   return await import("./chat-request");
 });
 
+vi.mock("@/lib/assistant-stream", async () => {
+  return await import("./assistant-stream");
+});
+
 vi.mock("@/lib/pathway-state", async () => {
   return await import("./pathway-state");
 });
@@ -90,6 +94,11 @@ describe("/api/chat", () => {
     expect(streamText).toHaveBeenCalledWith(
       expect.objectContaining({
         system: expect.stringContaining('"sex":"female"'),
+      })
+    );
+    expect(streamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        experimental_transform: expect.any(Function),
       })
     );
   });

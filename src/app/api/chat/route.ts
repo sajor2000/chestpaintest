@@ -8,6 +8,7 @@ import {
   RequestValidationError,
   sanitizeClientMessages,
 } from "@/lib/chat-request";
+import { createAssistantTextCleanupTransform } from "@/lib/assistant-stream";
 import { buildPathwayStatePrompt } from "@/lib/pathway-state";
 import { SYSTEM_PROMPT } from "@/lib/system-prompt";
 import {
@@ -65,6 +66,7 @@ export async function POST(req: Request) {
     system: `${SYSTEM_PROMPT}\n\n${buildPathwayStatePrompt(messages)}`,
     messages: await convertToModelMessages(messages),
     stopWhen: stepCountIs(10),
+    experimental_transform: () => createAssistantTextCleanupTransform(),
     tools: {
       assess_ekg: assessEkg,
       evaluate_troponin: evaluateTroponin,
