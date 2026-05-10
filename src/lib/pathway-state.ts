@@ -36,40 +36,62 @@ function textFromMessage(message: UIMessage) {
     .join("\n");
 }
 
-function latestUserText(messages: UIMessage[]) {
+function userTexts(messages: UIMessage[]) {
   return messages
     .filter((message) => message.role === "user")
-    .map(textFromMessage)
-    .join("\n");
+    .map(textFromMessage);
 }
 
-function hasNegatedPhrase(text: string, pattern: RegExp) {
-  return pattern.test(text);
-}
-
-function extractBoolean(text: string, yesPattern: RegExp, noPattern: RegExp) {
-  if (hasNegatedPhrase(text, noPattern)) return false;
-  if (yesPattern.test(text)) return true;
-  return undefined;
-}
-
-function extractNumber(text: string, patterns: RegExp[]) {
-  for (const pattern of patterns) {
-    const match = pattern.exec(text);
-    if (match?.[1] !== undefined) return Number(match[1]);
+function latestMatch<T>(
+  texts: string[],
+  extractor: (text: string) => T | undefined
+) {
+  for (const text of [...texts].reverse()) {
+    const value = extractor(text);
+    if (value !== undefined) return value;
   }
   return undefined;
 }
 
-function extractHeartComponent(
-  text: string,
-  label: string,
-  aliases: string[]
+function extractBoolean(text: string, yesPattern: RegExp, noPattern: RegExp) {
+  const yesMatch = yesPattern.exec(text);
+  const noMatch = noPattern.exec(text);
+  if (!yesMatch && !noMatch) return undefined;
+  if (yesMatch && noMatch) {
+    const noMatchEnd = noMatch.index + noMatch[0].length;
+    if (noMatch.index <= yesMatch.index && yesMatch.index < noMatchEnd) {
+      return false;
+    }
+    return yesMatch.index > noMatch.index;
+  }
+  return Boolean(yesMatch);
+}
+
+function extractLatestNumber(text: string, patterns: RegExp[]) {
+  let latest: { index: number; value: number } | undefined;
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      if (match[1] === undefined) continue;
+      if (!latest || match.index > latest.index) {
+        latest = { index: match.index, value: Number(match[1]) };
+      }
+    }
+  }
+  return latest?.value;
+}
+
+function extractLatestHeartComponent(
+  texts: string[],
+  labelPattern: string
 ): 0 | 1 | 2 | undefined {
-  const labelPattern = [label, ...aliases].join("|");
-  const match = new RegExp(`(?:${labelPattern})\\s*(?:score|component)?\\s*[:=]?\\s*([012])`, "i").exec(text);
-  if (!match) return undefined;
-  return Number(match[1]) as 0 | 1 | 2;
+  return latestMatch(texts, (text) => {
+    const match = new RegExp(
+      `\\b(?:${labelPattern})\\b\\s*(?:score|component)?\\s*[:=]?\\s*([012])`,
+      "gi"
+    ).exec(text);
+    if (!match) return undefined;
+    return Number(match[1]) as 0 | 1 | 2;
+  });
 }
 
 function compactObject<T extends Record<string, unknown>>(value: T) {
@@ -157,74 +179,92 @@ function getNextAction(fields: PathwayState["fields"]) {
 }
 
 export function resolvePathwayState(messages: UIMessage[]): PathwayState {
-  const text = latestUserText(messages);
-  const lower = text.toLowerCase();
+  const texts = userTexts(messages);
 
-  const stemiOrEquivalent = extractBoolean(
-    lower,
-    /\b(?:yes\s*-\s*)?(?:stemi|stemi equivalent|stemi\/eqv)\b(?![^.\n]*\bno\b)/i,
-    /\bno\s+(?:stemi|stemi equivalent|stemi\/eqv)\b|\bno\s+stemi\s+or\s+stemi equivalent\b/i
+  const stemiOrEquivalent = latestMatch(texts, (text) =>
+    extractBoolean(
+      text,
+      /\b(?:yes\s*-\s*)?(?:stemi|stemi equivalent|stemi\/eqv)\b(?![^.\n]*\bno\b)/gi,
+      /\bno\s+(?:stemi|stemi equivalent|stemi\/eqv)\b|\bno\s+stemi\s+or\s+stemi equivalent\b/gi
+    )
   );
-  const ischemicChanges = extractBoolean(
-    lower,
-    /\b(?:yes\s*-\s*)?ischemic(?:\s+st\/?t|\s+st|\s+t-wave|\s+changes)?\b/i,
-    /\bno\s+ischemic\b|\bno\s+ischemic\s+st\/?t\b|\bno\s+ischemic\s+st\s+or\s+t-wave\b/i
+  const ischemicChanges = latestMatch(texts, (text) =>
+    extractBoolean(
+      text,
+      /\b(?:yes\s*-\s*)?ischemic(?:\s+st\/?t|\s+st|\s+t-wave|\s+changes)?\b/gi,
+      /\bno\s+ischemic\b|\bno\s+ischemic\s+st\/?t\b|\bno\s+ischemic\s+st\s+or\s+t-wave\b/gi
+    )
   );
 
-  const sex = /\bfemale\b/i.test(text)
-    ? "female"
-    : /\bmale\b/i.test(text)
-      ? "male"
+  const sex = latestMatch(texts, (text) => {
+    const matches = [...text.matchAll(/\b(female|male)\b/gi)];
+    const latest = matches.at(-1)?.[1]?.toLowerCase();
+    return latest === "female" || latest === "male" ? latest : undefined;
+  });
+
+  const isEsrd = latestMatch(texts, (text) =>
+    extractBoolean(
+      text,
+      /\b(?:yes\s*-\s*)?esrd\b|\bend-stage renal disease\b/gi,
+      /\bno\s+esrd\b|\bnot\s+esrd\b|\bno\s+end-stage renal\b/gi
+    )
+  );
+
+  const symptomDurationHours = latestMatch(texts, (text) =>
+    extractLatestNumber(text, [
+      /symptom duration:\s*(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/gi,
+      /symptoms?\s+(?:started|began)\s+(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s+ago/gi,
+      /\bsx\s*[<>]?\s*(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/gi,
+      /(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s+(?:of\s+)?symptoms/gi,
+    ])
+  );
+
+  const ongoingChestPain = latestMatch(texts, (text) =>
+    extractBoolean(
+      text,
+      /\b(?:yes\s*-\s*)?ongoing (?:cardiac )?chest pain\b|\bchest pain is ongoing\b/gi,
+      /\bno ongoing (?:cardiac )?chest pain\b|\bchest pain (?:is )?not ongoing\b|\bno chest pain now\b/gi
+    )
+  );
+
+  const hst0 = latestMatch(texts, (text) =>
+    extractLatestNumber(text, [
+      /\b0\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-tni|troponin)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+      /\b(?:hst|hs-tni|troponin)\s*(?:0\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+    ])
+  );
+  const hst2 = latestMatch(texts, (text) =>
+    extractLatestNumber(text, [
+      /\b2\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-tni|troponin)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+      /\b(?:hst|hs-tni|troponin)\s*(?:2\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+    ])
+  );
+  const hst4 = latestMatch(texts, (text) =>
+    extractLatestNumber(text, [
+      /\b4\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-tni|troponin)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+      /\b(?:hst|hs-tni|troponin)\s*(?:4\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+    ])
+  );
+
+  const clinicalSuspicion = latestMatch(texts, (text) => {
+    const matches = [
+      ...text.matchAll(
+        /clinical suspicion(?: for acs)?\s*(?:is|:)?\s*(low|moderate|high)\b/gi
+      ),
+      ...text.matchAll(/\b(low|moderate|high)\s+clinical suspicion\b/gi),
+    ].sort((a, b) => a.index - b.index);
+    const latest = matches.at(-1)?.[1]?.toLowerCase();
+    return latest === "low" || latest === "moderate" || latest === "high"
+      ? latest
       : undefined;
-
-  const isEsrd = extractBoolean(
-    lower,
-    /\b(?:yes\s*-\s*)?esrd\b|\bend-stage renal disease\b/i,
-    /\bno\s+esrd\b|\bnot\s+esrd\b|\bno\s+end-stage renal\b/i
-  );
-
-  const symptomDurationHours = extractNumber(text, [
-    /symptom duration:\s*(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/i,
-    /symptoms?\s+(?:started|began)\s+(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s+ago/i,
-    /\bsx\s*[<>]?\s*(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/i,
-    /(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s+(?:of\s+)?symptoms/i,
-  ]);
-
-  const ongoingChestPain = extractBoolean(
-    lower,
-    /\b(?:yes\s*-\s*)?ongoing (?:cardiac )?chest pain\b|\bchest pain is ongoing\b/i,
-    /\bno ongoing (?:cardiac )?chest pain\b|\bchest pain (?:is )?not ongoing\b|\bno chest pain now\b/i
-  );
-
-  const hst0 = extractNumber(text, [
-    /\b0\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-tni|troponin)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/i,
-    /\b(?:hst|hs-tni|troponin)\s*(?:0\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/i,
-  ]);
-  const hst2 = extractNumber(text, [
-    /\b2\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-tni|troponin)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/i,
-    /\b(?:hst|hs-tni|troponin)\s*(?:2\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/i,
-  ]);
-  const hst4 = extractNumber(text, [
-    /\b4\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-tni|troponin)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/i,
-    /\b(?:hst|hs-tni|troponin)\s*(?:4\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/i,
-  ]);
-
-  const suspicionMatch =
-    /clinical suspicion(?: for acs)?\s*(?:is|:)?\s*(low|moderate|high)\b/i.exec(
-      text
-    ) ?? /\b(low|moderate|high)\s+clinical suspicion\b/i.exec(text);
-  const clinicalSuspicion = suspicionMatch?.[1]?.toLowerCase() as
-    | "low"
-    | "moderate"
-    | "high"
-    | undefined;
+  });
 
   const heartComponents = compactObject({
-    history: extractHeartComponent(text, "history", ["h"]),
-    ekg: extractHeartComponent(text, "ekg", ["e"]),
-    age: extractHeartComponent(text, "age", ["a"]),
-    risk_factors: extractHeartComponent(text, "risk factors?", ["r"]),
-    troponin: extractHeartComponent(text, "troponin", ["t"]),
+    history: extractLatestHeartComponent(texts, "history"),
+    ekg: extractLatestHeartComponent(texts, "ekg"),
+    age: extractLatestHeartComponent(texts, "age"),
+    risk_factors: extractLatestHeartComponent(texts, "risk factors?"),
+    troponin: extractLatestHeartComponent(texts, "troponin"),
   }) as HeartComponents;
 
   const fields: PathwayState["fields"] = compactObject({
@@ -240,15 +280,19 @@ export function resolvePathwayState(messages: UIMessage[]): PathwayState {
     clinicalSuspicion,
     heartComponents:
       Object.keys(heartComponents).length > 0 ? heartComponents : undefined,
-    recentNormalTesting: extractBoolean(
-      lower,
-      /\brecent normal (?:cardiac )?testing\b/i,
-      /\bno recent normal (?:cardiac )?testing\b/i
+    recentNormalTesting: latestMatch(texts, (text) =>
+      extractBoolean(
+        text,
+        /\brecent normal (?:cardiac )?testing\b|\brecent normal (?:cardiac )?testing is present\b/gi,
+        /\bno recent normal (?:cardiac )?testing\b/gi
+      )
     ),
-    chronicUnchangedHst: extractBoolean(
-      lower,
-      /\bchronic unchanged hst\b|\bknown chronic unchanged hst\b/i,
-      /\bno (?:known )?chronic unchanged hst\b/i
+    chronicUnchangedHst: latestMatch(texts, (text) =>
+      extractBoolean(
+        text,
+        /\bchronic unchanged hst\b|\bknown chronic unchanged hst\b/gi,
+        /\bno (?:known )?chronic unchanged hst\b/gi
+      )
     ),
   });
 

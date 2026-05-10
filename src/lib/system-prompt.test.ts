@@ -58,4 +58,11 @@ describe("SYSTEM_PROMPT clinical safety framing", () => {
       "do not call `suggest_followups` after a final disposition"
     );
   });
+
+  it("keeps quick-reply prompts visually clean", () => {
+    expect(SYSTEM_PROMPT).toContain("ask the question once");
+    expect(SYSTEM_PROMPT).toContain(
+      "do not repeat the button labels in prose"
+    );
+  });
 });

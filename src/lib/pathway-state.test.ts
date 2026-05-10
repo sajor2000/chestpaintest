@@ -59,4 +59,68 @@ describe("server-owned pathway state", () => {
     expect(prompt).toContain('"hst2":7');
     expect(prompt).toContain("Do not re-ask for fields listed in presentFields");
   });
+
+  it("prefers the latest explicit clinician corrections for scalar pathway fields", () => {
+    const state = resolvePathwayState([
+      userMessage(
+        "Female. No ESRD. Symptoms started 5 hours ago. No ongoing chest pain. 0-hour HST is 3 ng/L. Clinical suspicion for ACS is moderate. No recent normal cardiac testing and no known chronic unchanged HST."
+      ),
+      userMessage(
+        "Correction: patient is male. Yes ESRD. Chest pain is ongoing. Symptoms started 2 hours ago. 0-hour HST is 6 ng/L. Clinical suspicion for ACS is high. Recent normal cardiac testing is present. Chronic unchanged HST is known."
+      ),
+    ]);
+
+    expect(state.fields.sex).toBe("male");
+    expect(state.fields.isEsrd).toBe(true);
+    expect(state.fields.ongoingChestPain).toBe(true);
+    expect(state.fields.symptomDurationHours).toBe(2);
+    expect(state.fields.hst0).toBe(6);
+    expect(state.fields.clinicalSuspicion).toBe("high");
+    expect(state.fields.recentNormalTesting).toBe(true);
+    expect(state.fields.chronicUnchangedHst).toBe(true);
+  });
+
+  it("prefers the latest explicit HST correction for each timepoint", () => {
+    const state = resolvePathwayState([
+      userMessage(
+        "Female. No ESRD. Symptoms started 5 hours ago. 0-hour HST is 3 ng/L. 2-hour HST is 10 ng/L. 4-hour HST is 8 ng/L."
+      ),
+      userMessage(
+        "Correction: 0-hour HST is 6 ng/L. 2-hour HST is 7 ng/L. 4-hour HST is 9 ng/L."
+      ),
+    ]);
+
+    expect(state.fields.hst0).toBe(6);
+    expect(state.fields.hst2).toBe(7);
+    expect(state.fields.hst4).toBe(9);
+  });
+
+  it("does not infer HEART EKG from age text or HST timepoints", () => {
+    expect(
+      resolvePathwayState([userMessage("HEART components: age 1, troponin 0.")])
+        .fields.heartComponents
+    ).toEqual({ age: 1, troponin: 0 });
+
+    expect(
+      resolvePathwayState([userMessage("2-hour HST is 7 ng/L.")]).fields
+        .heartComponents
+    ).toBeUndefined();
+  });
+
+  it("keeps partial HEART component bundles partial instead of filling missing components", () => {
+    const state = resolvePathwayState([
+      userMessage("HEART components: history 0, age 1, troponin 0."),
+    ]);
+
+    expect(state.fields.heartComponents).toEqual({
+      history: 0,
+      age: 1,
+      troponin: 0,
+    });
+    expect(state.presentFields).toContain("heart.history");
+    expect(state.presentFields).toContain("heart.age");
+    expect(state.presentFields).toContain("heart.troponin");
+    expect(state.presentFields).not.toContain("heart.ekg");
+    expect(state.presentFields).not.toContain("heart.risk_factors");
+  });
 });

@@ -283,7 +283,7 @@ function HeartScoreCard({ data }: { data: Record<string, unknown> }) {
                   </div>
                 ))}
               </div>
-              <div className="flex-1 min-w-0 text-xs text-[#494949] truncate">
+              <div className="flex-1 min-w-0 text-xs leading-snug text-[#494949]">
                 {labels[key]}
               </div>
             </div>
