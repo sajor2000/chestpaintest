@@ -28,9 +28,9 @@ npm run build
 npm audit --omit=dev
 ```
 
-Current expected suite coverage is 127 Vitest tests:
+Current expected suite coverage is 131 Vitest tests:
 
-- 83 deterministic pathway tests for Rush hs-TnI thresholds, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
+- 87 deterministic pathway tests for Rush hs-TnI thresholds, explicit troponin source validation, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
 - 12 chat request sanitization tests.
 - 24 pathway UI workflow tests, including stale-button suppression for HST prompts and final disposition cards.
 - 1 chat route request-size guard test.

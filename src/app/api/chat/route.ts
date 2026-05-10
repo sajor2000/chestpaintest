@@ -8,6 +8,7 @@ import {
   RequestValidationError,
   sanitizeClientMessages,
 } from "@/lib/chat-request";
+import { buildPathwayStatePrompt } from "@/lib/pathway-state";
 import { SYSTEM_PROMPT } from "@/lib/system-prompt";
 import {
   assessEkg,
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: getModel(),
-    system: SYSTEM_PROMPT,
+    system: `${SYSTEM_PROMPT}\n\n${buildPathwayStatePrompt(messages)}`,
     messages: await convertToModelMessages(messages),
     stopWhen: stepCountIs(10),
     tools: {

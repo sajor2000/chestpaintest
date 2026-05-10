@@ -13,7 +13,7 @@ The chatbot walks the physician through the pathway step by step:
 5. **HEART Score** — LLM-guided 5-component scoring with visual breakdown card
 6. **Disposition** — Low (discharge) / Intermediate (observation) / Chronic Injury / High (admit) / Pending (4hr or repeat HST required)
 
-**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions with 127 tests, including 83 tests verified node-by-node against the source PDF.
+**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions with 131 tests, including 87 tests verified node-by-node against the source PDF.
 
 ## Features
 
@@ -36,7 +36,7 @@ The chatbot walks the physician through the pathway step by step:
 | AI SDK | Vercel AI SDK v6 (`@ai-sdk/azure`, `@ai-sdk/react`) |
 | LLM | Azure OpenAI GPT-4.1-mini (Chat Completions API) |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest (127 tests; 83 deterministic pathway tests) |
+| Testing | Vitest (131 tests; 87 deterministic pathway tests) |
 | FHIR | SMART on FHIR scaffold; add `fhirclient` during Phase 2 Epic integration |
 
 ## Setup
@@ -84,7 +84,7 @@ Use `.env.example` as the template. Do not commit `.env.local`.
 npx vitest run
 ```
 
-127 tests cover the pathway logic, request sanitization, route guard, system-prompt safety framing, and pathway UI workflow. The 83 deterministic pathway tests verify every decision node from the Rush hs-TnI pathway PDF:
+131 tests cover the pathway logic, request sanitization, route guard, system-prompt safety framing, and pathway UI workflow. The 87 deterministic pathway tests verify every decision node from the Rush hs-TnI pathway PDF:
 - STEMI/EQV diamond routing
 - 99% URL thresholds (boundary values)
 - Early MI rule-out (all 6 gate conditions)
@@ -122,7 +122,7 @@ src/
     system-prompt.ts     # Pathway conversation guide + safety rules
     azure.ts             # Azure OpenAI provider config
   __tests__/
-    pathway.test.ts      # 83 tests against PDF source of truth
+    pathway.test.ts      # 87 tests against PDF source of truth
     chat-route.test.ts   # /api/chat request-size guard
     system-prompt.test.ts # protocol-only safety framing and flow guards
     chat-request.test.ts # browser message sanitization
