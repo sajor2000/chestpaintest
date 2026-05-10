@@ -90,6 +90,22 @@ export function cleanQuickReplyPromptText(text: string) {
     .trim();
 }
 
+export function cleanRepeatedQuestionText(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+
+  if (trimmed.length % 2 === 0) {
+    const midpoint = trimmed.length / 2;
+    const firstHalf = trimmed.slice(0, midpoint);
+    if (firstHalf === trimmed.slice(midpoint)) return firstHalf.trim();
+  }
+
+  const adjacentQuestion = /^([\s\S]+\?)\s*\1$/.exec(trimmed);
+  if (adjacentQuestion) return adjacentQuestion[1].trim();
+
+  return trimmed.replace(/([^\n?]+\?)\s*\1/g, "$1").trim();
+}
+
 function normalizedQuestionSignature(text: string, options: string[]) {
   const cleaned = cleanQuickReplyPromptText(text);
   const question = getActiveQuestionText(cleaned).toLowerCase();

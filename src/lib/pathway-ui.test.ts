@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cleanQuickReplyPromptText,
+  cleanRepeatedQuestionText,
   getPathwayStep,
   isDuplicateQuickReplyPromptText,
   normalizeQuickReplyOptions,
@@ -296,6 +297,16 @@ describe("quick-reply prompt cleanup", () => {
         ["Male", "Female"]
       )
     ).toBe(true);
+  });
+
+  it("collapses repeated adjacent free-text questions", () => {
+    expect(
+      cleanRepeatedQuestionText(
+        "What is the symptom duration in hours? Please provide the number of hours since chest pain onset.What is the symptom duration in hours? Please provide the number of hours since chest pain onset."
+      )
+    ).toBe(
+      "What is the symptom duration in hours? Please provide the number of hours since chest pain onset."
+    );
   });
 
   it("hides stale follow-up text when stale buttons were suppressed for a free-text prompt", () => {

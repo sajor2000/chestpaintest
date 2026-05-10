@@ -6,6 +6,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { FileUIPart } from "ai";
 import {
   cleanQuickReplyPromptText,
+  cleanRepeatedQuestionText,
   getPathwayStep,
   isDuplicateQuickReplyPromptText,
   normalizeQuickReplyOptions,
@@ -628,10 +629,26 @@ export default function Chat() {
                   const hasFollowingFollowups = msg.parts
                     .slice(i + 1)
                     .some((p) => p.type === "tool-suggest_followups");
-                  const text = hasFollowingFollowups
+                  const rawText = hasFollowingFollowups
                     ? cleanQuickReplyPromptText(part.text)
                     : part.text;
+                  const text =
+                    msg.role === "assistant"
+                      ? cleanRepeatedQuestionText(rawText)
+                      : rawText;
                   if (!text) return null;
+                  const previousVisibleTextPart = msg.parts
+                    .slice(0, i)
+                    .filter((p) => p.type === "text")
+                    .pop();
+                  if (
+                    msg.role === "assistant" &&
+                    previousVisibleTextPart &&
+                    "text" in previousVisibleTextPart &&
+                    cleanRepeatedQuestionText(previousVisibleTextPart.text) === text
+                  ) {
+                    return null;
+                  }
                   const hasAnyFollowups = msg.parts.some(
                     (p) => p.type === "tool-suggest_followups"
                   );
