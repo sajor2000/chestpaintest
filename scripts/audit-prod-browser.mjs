@@ -270,6 +270,11 @@ async function runBrowserAudit(browser) {
     await sendText(page, "4 hours");
     await waitForMessageText(page, /0[- ]?hour|HST|hs-TnI|troponin/i);
     await sendText(page, "3");
+    await waitForMessageText(
+      page,
+      /clinical suspicion|LOW|Low-risk discharge|discharge/i,
+      STEP_TIMEOUT_MS
+    );
 
     const textAfterHst = await bodyText(page);
     if (/clinical suspicion/i.test(textAfterHst)) {
