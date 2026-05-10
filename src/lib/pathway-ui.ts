@@ -77,6 +77,10 @@ export function cleanQuickReplyPromptText(text: string) {
       /\s*\bI(?:'ll| will)\s+(?:provide|show|add)\s+(?:quick[- ]reply\s+|quick\s+)?buttons?(?:\s+(?:for\s+(?:you|response|quick replies)|below))?\.?/gi,
       ""
     )
+    .replace(
+      /\s*\bI(?:'ll| will)\s+(?:provide|show|add)\s+(?:the\s+)?(?:quick[- ]reply\s+|quick\s+)?options?(?:\s+(?:for\s+(?:you|response)|below))?\.?/gi,
+      ""
+    )
     .replace(/\s*\bI will provide buttons for quick replies\.?/gi, "")
     .replace(/\s*\bOptions:\s*[^\n.]+\.?/gi, "")
     .replace(/\s*\((?:please\s+)?(?:select|choose|respond)[^)]*\)/gi, "")

@@ -263,6 +263,12 @@ describe("quick-reply prompt cleanup", () => {
         "Next, patient sex: Male or Female? I'll provide quick buttons for response."
       )
     ).toBe("Next, patient sex: Male or Female?");
+
+    expect(
+      cleanQuickReplyPromptText(
+        "Hello. Does the EKG show STEMI or STEMI equivalent? I will provide options."
+      )
+    ).toBe("Hello. Does the EKG show STEMI or STEMI equivalent?");
   });
 
   it("detects duplicate follow-up text after quick-reply buttons", () => {

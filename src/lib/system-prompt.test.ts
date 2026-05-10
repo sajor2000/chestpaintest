@@ -65,6 +65,7 @@ describe("SYSTEM_PROMPT clinical safety framing", () => {
       "do not repeat the button labels in prose"
     );
     expect(SYSTEM_PROMPT).toContain("The UI already shows the buttons");
+    expect(SYSTEM_PROMPT).toContain("I will provide options");
     expect(SYSTEM_PROMPT).toContain(
       "Do not add a second text block that restates the same question"
     );
