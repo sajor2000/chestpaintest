@@ -19,14 +19,53 @@ import {
 // Helper: call tool execute with args
 const ekg = (args: Parameters<typeof assessEkg.execute>[0]) =>
   assessEkg.execute(args, { toolCallId: "t", messages: [], abortSignal: undefined as unknown as AbortSignal });
-const trop = (args: Parameters<typeof evaluateTroponin.execute>[0]) =>
-  evaluateTroponin.execute(args, { toolCallId: "t", messages: [], abortSignal: undefined as unknown as AbortSignal });
+type TropArgs = Omit<
+  Parameters<typeof evaluateTroponin.execute>[0],
+  "value_source"
+> & {
+  value_source?: string;
+  messages?: Parameters<typeof evaluateTroponin.execute>[1]["messages"];
+};
+const trop = ({ messages, ...args }: TropArgs) => {
+  const clinicalSuspicionSource =
+    args.clinical_suspicion_source ??
+    (args.clinical_suspicion
+      ? `Clinical suspicion for ACS: ${args.clinical_suspicion}`
+      : undefined);
+  const defaultMessages = clinicalSuspicionSource
+    ? [{ role: "user" as const, content: clinicalSuspicionSource }]
+    : [];
+
+  return evaluateTroponin.execute(
+    {
+      ...args,
+      value_source: args.value_source ?? `${args.value} ng/L HST`,
+      clinical_suspicion_source: clinicalSuspicionSource,
+    },
+    {
+      toolCallId: "t",
+      messages: messages ?? defaultMessages,
+      abortSignal: undefined as unknown as AbortSignal,
+    }
+  );
+};
 const delta = (args: Parameters<typeof calculateDelta.execute>[0]) =>
   calculateDelta.execute(args, { toolCallId: "t", messages: [], abortSignal: undefined as unknown as AbortSignal });
 const heart = (args: Parameters<typeof calculateHeartScore.execute>[0]) =>
   calculateHeartScore.execute(args, { toolCallId: "t", messages: [], abortSignal: undefined as unknown as AbortSignal });
-const dispo = (args: Parameters<typeof determineDisposition.execute>[0]) =>
-  determineDisposition.execute(args, { toolCallId: "t", messages: [], abortSignal: undefined as unknown as AbortSignal });
+type DispoArgs = Parameters<typeof determineDisposition.execute>[0] & {
+  messages?: Parameters<typeof determineDisposition.execute>[1]["messages"];
+};
+const dispo = ({ messages, ...args }: DispoArgs) =>
+  determineDisposition.execute(args, {
+    toolCallId: "t",
+    messages:
+      messages ??
+      (args.early_rule_out
+        ? [{ role: "user" as const, content: "Clinical suspicion for ACS: low." }]
+        : []),
+    abortSignal: undefined as unknown as AbortSignal,
+  });
 
 // ============================================================
 // PDF Node: "STEMI/EQV?" diamond at top of flowchart
@@ -63,6 +102,32 @@ describe("assess_ekg — PDF: STEMI/EQV decision diamond", () => {
 // PDF: 99% URL thresholds box — Males 35 ng/L, Females 14 ng/L
 // ============================================================
 describe("evaluate_troponin — PDF: 99% URL thresholds", () => {
+  it("rejects non-troponin yes/no context before threshold evaluation", async () => {
+    const r = await trop({
+      value: 0,
+      value_source: "Ongoing chest pain: no. This is not an HST/troponin value.",
+      hour: "0",
+      sex: "female",
+      is_esrd: false,
+    });
+
+    expect(r.invalid_input).toBe(true);
+    expect(r.message).toContain("Troponin evaluation was not performed");
+  });
+
+  it("allows a bare numeric source when it matches the provided HST value", async () => {
+    const r = await trop({
+      value: 3,
+      value_source: "3",
+      hour: "0",
+      sex: "female",
+      is_esrd: false,
+    });
+
+    expect(r.invalid_input).toBeUndefined();
+    expect(r.above_url).toBe(false);
+  });
+
   it("Male 99% URL = 35 ng/L — value 34 is below", async () => {
     const r = await trop({ value: 34, hour: "0", sex: "male", is_esrd: false });
     expect(r.above_url).toBe(false);
@@ -107,6 +172,38 @@ describe("evaluate_troponin — PDF: Early MI rule-out", () => {
     });
     expect(r.early_rule_out_eligible).toBe(true);
     expect(r.footnotes).toContain("NPV for MI is 99.5%.");
+  });
+
+  it("HST <5 does not use inferred low suspicion from symptom text", async () => {
+    const r = await trop({
+      value: 3,
+      hour: "0",
+      sex: "male",
+      is_esrd: false,
+      symptom_duration_hours: 4,
+      clinical_suspicion: "low",
+      clinical_suspicion_source: "Symptoms are resolved after walking and antacid.",
+    });
+
+    expect(r.early_rule_out_eligible).toBe(false);
+    expect(r.needs_clinical_suspicion).toBe(true);
+    expect(r.message).toContain("Ask the clinician");
+  });
+
+  it("HST <5 does not trust a model-supplied low suspicion source without a user answer", async () => {
+    const r = await trop({
+      value: 3,
+      hour: "0",
+      sex: "male",
+      is_esrd: false,
+      symptom_duration_hours: 4,
+      clinical_suspicion: "low",
+      clinical_suspicion_source: "Clinical suspicion for ACS: low.",
+      messages: [],
+    });
+
+    expect(r.early_rule_out_eligible).toBe(false);
+    expect(r.needs_clinical_suspicion).toBe(true);
   });
 
   it("HST = 5 (not < 5) → NOT eligible", async () => {
@@ -198,12 +295,19 @@ describe("calculate_delta — PDF: Significant delta rules", () => {
     const r = await delta({ hst_0hr: 10, hst_current: 25, hour: "2" });
     expect(r.significant).toBe(true);
     expect(r.absolute_delta).toBe(15);
+    expect(r.clinical_delta_flag).toBe("CLINICALLY_SIGNIFICANT_DELTA");
+    expect(r.math_summary).toBe("25 - 10 = +15 ng/L");
+    expect(r.recommendations).toContain(
+      "Flag this as a clinically significant delta in the pathway."
+    );
   });
 
   it("2hr absolute delta = 14 → NOT significant", async () => {
     const r = await delta({ hst_0hr: 10, hst_current: 24, hour: "2" });
     expect(r.significant).toBe(false);
     expect(r.absolute_delta).toBe(14);
+    expect(r.clinical_delta_flag).toBe("INTERMEDIATE_DELTA_REQUIRES_4HR");
+    expect(r.math_summary).toBe("24 - 10 = +14 ng/L");
   });
 
   it("4hr absolute delta = 15 → significant", async () => {
@@ -360,6 +464,20 @@ describe("determine_disposition — PDF: Early MI rule-out path", () => {
     expect(r.recommendations).toContain(
       "Review return precautions for recurrent, worsening, or persistent chest pain."
     );
+    expect(r.chest_pain_charting_prompts).toContain(
+      "Document exact chest pain onset time and symptom duration used for pathway routing."
+    );
+  });
+
+  it("Early rule-out cannot finalize without explicit low suspicion from the user", async () => {
+    const r = await dispo({
+      ...baseDispo,
+      early_rule_out: true,
+      messages: [],
+    });
+
+    expect(r.risk).toBe("PENDING");
+    expect(r.disposition).toContain("Clinical suspicion for ACS");
   });
 
   // PDF Footnote C: ESRD blocks early rule-out

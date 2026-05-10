@@ -74,6 +74,76 @@ describe("normalizeQuickReplyOptions", () => {
     ).toEqual(["Low", "Moderate", "High"]);
   });
 
+  it("does not replace HEART troponin score buttons when text mentions female URL", () => {
+    const options = ["0 - Normal", "1 - 1–3× URL", "2 - >3× URL"];
+
+    expect(
+      normalizeQuickReplyOptions(
+        "The 0hr HST was 12 ng/L (female 99% URL = 14), which is at or below normal. I'd suggest scoring this 0 — do you agree?",
+        options
+      )
+    ).toEqual(options);
+  });
+
+  it("does not replace HEART troponin score buttons when text mentions male URL", () => {
+    const options = ["0 - Normal", "1 - 1–3× URL", "2 - >3× URL"];
+
+    expect(
+      normalizeQuickReplyOptions(
+        "The 0hr HST was 40 ng/L (male 99% URL = 35), which is above normal. Troponin score for HEART?",
+        options
+      )
+    ).toEqual(options);
+  });
+
+  it("still recognizes a direct male or female sex question", () => {
+    expect(
+      normalizeQuickReplyOptions("Male or female?", ["Male", "Female"])
+    ).toEqual(["Male", "Female"]);
+  });
+
+  it("does not replace HEART EKG score buttons when summary mentions STEMI or ischemic changes", () => {
+    const options = [
+      "0 - Normal",
+      "1 - Non-specific changes",
+      "2 - Significant ST deviation",
+    ];
+
+    expect(
+      normalizeQuickReplyOptions(
+        "No STEMI or ischemic ST changes on the EKG. EKG score for HEART?",
+        options
+      )
+    ).toEqual(options);
+  });
+
+  it("does not replace free-text HST entry when summary mentions ESRD", () => {
+    expect(
+      normalizeQuickReplyOptions(
+        "Patient is female with no ESRD. What was the initial HST value?",
+        ["Enter HST value"]
+      )
+    ).toEqual([]);
+  });
+
+  it("suppresses stale sex buttons on a free-text hs-TnI value prompt", () => {
+    expect(
+      normalizeQuickReplyOptions(
+        "Please provide the 0-hour hs-TnI (high-sensitivity troponin I) value in ng/L.",
+        ["Male", "Female"]
+      )
+    ).toEqual([]);
+  });
+
+  it("suppresses follow-up buttons after a final low-risk disposition card", () => {
+    expect(
+      normalizeQuickReplyOptions(
+        "LOW-RISK DISCHARGE PATHWAY CONFIRMED\nDischarge with follow-up.\nIs the chest pain still ongoing?",
+        ["Yes - ongoing pain", "No ongoing pain"]
+      )
+    ).toEqual([]);
+  });
+
   it("multiple prior mentions then ongoing chest pain question → pain buttons", () => {
     expect(
       normalizeQuickReplyOptions(
@@ -86,7 +156,7 @@ describe("normalizeQuickReplyOptions", () => {
   it("falls through to tool options when no rule matches", () => {
     expect(
       normalizeQuickReplyOptions(
-        "What was the troponin value?",
+        "Please provide a brief symptom description.",
         ["Enter value"]
       )
     ).toEqual(["Enter value"]);

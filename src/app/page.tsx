@@ -30,6 +30,10 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+function num(v: unknown): number | undefined {
+  return typeof v === "number" ? v : undefined;
+}
+
 function RiskCard({ data }: { data: Record<string, unknown> }) {
   const risk = str(data.risk) ?? str(data.action) ?? "";
   const colors = RISK_COLORS[risk] ?? RISK_COLORS.INTERMEDIATE;
@@ -39,6 +43,9 @@ function RiskCard({ data }: { data: Record<string, unknown> }) {
   const footnotes = isStringArray(data.footnotes) ? data.footnotes : [];
   const recommendations = isStringArray(data.recommendations)
     ? data.recommendations
+    : [];
+  const chartingPrompts = isStringArray(data.chest_pain_charting_prompts)
+    ? data.chest_pain_charting_prompts
     : [];
   const isLowRiskDischarge = risk === "LOW" && recommendations.length > 0;
 
@@ -70,37 +77,51 @@ function RiskCard({ data }: { data: Record<string, unknown> }) {
         <div className="text-xs text-[#494949] mt-1">{rationale}</div>
       )}
       {isLowRiskDischarge && (
-        <div className="mt-3 rounded-md border border-[#006332]/15 bg-white px-3 py-2.5">
-          <div className="text-xs font-bold uppercase tracking-wide text-[#006332]">
-            Discharge recommendations
-          </div>
-          <ul className="mt-2 space-y-2">
-            {recommendations.map((recommendation) => (
-              <li
-                key={recommendation}
-                className="flex gap-2 text-xs leading-snug text-[#353535]"
-              >
-                <span
-                  className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#006332]/10 text-[#006332]"
-                  aria-hidden="true"
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          <div className="rounded-md border border-[#006332]/15 bg-white px-3 py-2.5">
+            <div className="text-xs font-bold uppercase tracking-wide text-[#006332]">
+              Discharge recommendations
+            </div>
+            <ul className="mt-2 space-y-2">
+              {recommendations.map((recommendation) => (
+                <li
+                  key={recommendation}
+                  className="flex gap-2 text-xs leading-snug text-[#353535]"
                 >
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                  <span
+                    className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#006332]/10 text-[#006332]"
+                    aria-hidden="true"
                   >
-                    <path d="M20 6 9 17l-5-5" />
-                  </svg>
-                </span>
-                <span>{recommendation}</span>
-              </li>
-            ))}
-          </ul>
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  </span>
+                  <span>{recommendation}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {chartingPrompts.length > 0 && (
+            <div className="rounded-md border border-[#c8902e]/25 bg-[#fffaf0] px-3 py-2.5">
+              <div className="text-xs font-bold uppercase tracking-wide text-[#7a4a00]">
+                Chest pain charting prompts
+              </div>
+              <ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-snug text-[#353535]">
+                {chartingPrompts.map((prompt) => (
+                  <li key={prompt}>{prompt}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
       {message && !disposition && (
@@ -118,6 +139,18 @@ function RiskCard({ data }: { data: Record<string, unknown> }) {
 type ToolPart = { type: string; state?: string; output?: Record<string, unknown> };
 
 type ChatMessage = ReturnType<typeof useChat>["messages"][number];
+
+function hasFinalDispositionResult(msg: ChatMessage): boolean {
+  return msg.parts.some((part) => {
+    if (!part.type.startsWith("tool-")) return false;
+    const output = (part as ToolPart).output;
+    if (!output) return false;
+
+    const risk = str(output.risk);
+    const action = str(output.action);
+    return Boolean((risk && risk !== "PENDING") || action === "STEMI_PATHWAY");
+  });
+}
 
 function getMessageText(msg: ChatMessage): string {
   return msg.parts
@@ -266,6 +299,104 @@ function HeartScoreCard({ data }: { data: Record<string, unknown> }) {
   );
 }
 
+function DeltaCard({ data }: { data: Record<string, unknown> }) {
+  const category = str(data.delta_category) ?? "minimal";
+  const mathSummary = str(data.math_summary);
+  const logicSummary = str(data.logic_summary);
+  const method = str(data.method);
+  const direction = str(data.direction);
+  const recommendations = isStringArray(data.recommendations)
+    ? data.recommendations
+    : [];
+  const footnote = str(data.footnote);
+  const absoluteDelta = num(data.absolute_delta);
+  const isSignificant = category === "significant";
+  const isIntermediate = category === "intermediate";
+  const tone = isSignificant
+    ? {
+        bg: "bg-red-50",
+        border: "border-red-500",
+        text: "text-red-800",
+        chip: "bg-red-100 text-red-800 border-red-200",
+        title: "Clinically significant delta",
+      }
+    : isIntermediate
+      ? {
+          bg: "bg-amber-50",
+          border: "border-amber-500",
+          text: "text-amber-800",
+          chip: "bg-amber-100 text-amber-800 border-amber-200",
+          title: "Intermediate delta: 4-hour HST needed",
+        }
+      : {
+          bg: "bg-emerald-50",
+          border: "border-emerald-500",
+          text: "text-emerald-800",
+          chip: "bg-emerald-100 text-emerald-800 border-emerald-200",
+          title: "No clinically significant delta",
+        };
+
+  return (
+    <div className={`my-2 rounded-lg border-l-4 p-3 ${tone.bg} ${tone.border}`}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className={`text-sm font-bold uppercase tracking-wide ${tone.text}`}>
+            {tone.title}
+          </div>
+          {mathSummary && (
+            <div className="mt-1 font-mono text-xs text-[#353535]">
+              {mathSummary}
+            </div>
+          )}
+        </div>
+        {absoluteDelta !== undefined && (
+          <div className={`rounded-full border px-2.5 py-1 text-xs font-bold ${tone.chip}`}>
+            Delta {absoluteDelta} ng/L
+          </div>
+        )}
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {method && (
+          <div className="rounded-md border border-black/5 bg-white px-3 py-2">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-[#494949]">
+              Math rule
+            </div>
+            <div className="mt-1 text-xs text-[#353535]">{method}</div>
+          </div>
+        )}
+        {logicSummary && (
+          <div className="rounded-md border border-black/5 bg-white px-3 py-2">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-[#494949]">
+              Pathway logic
+            </div>
+            <div className="mt-1 text-xs text-[#353535]">{logicSummary}</div>
+            {direction && (
+              <div className="mt-1 text-[11px] text-[#494949]">
+                Direction: {direction}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {recommendations.length > 0 && (
+        <ul className="mt-2 space-y-1.5 text-xs text-[#353535]">
+          {recommendations.map((item) => (
+            <li key={item} className="flex gap-2">
+              <span className={`font-bold ${tone.text}`}>Flag</span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {footnote && (
+        <div className="mt-2 border-t border-black/5 pt-1.5 text-xs italic text-[#494949]">
+          {footnote}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolResult({ part }: { part: ToolPart }) {
   const data = part.output;
   if (!data) return null;
@@ -276,6 +407,10 @@ function ToolResult({ part }: { part: ToolPart }) {
 
   if (part.type === "tool-calculate_heart_score" && data.components) {
     return <HeartScoreCard data={data} />;
+  }
+
+  if (part.type === "tool-calculate_delta" && data.delta_category) {
+    return <DeltaCard data={data} />;
   }
 
   const message = str(data.message);
@@ -478,6 +613,7 @@ export default function Chat() {
                   );
                 }
                 if (part.type === "tool-suggest_followups") {
+                  if (hasFinalDispositionResult(msg)) return null;
                   const tp = part as ToolPart;
                   const opts = tp.output?.options;
                   if (!Array.isArray(opts) || opts.length === 0) return null;
@@ -541,8 +677,9 @@ export default function Chat() {
       {/* Disclaimer */}
       <div className="px-4 py-1.5 text-center border-t border-gray-100">
         <p className="text-[10px] text-[#494949]/50 tracking-wide">
-          Decision support tool only. Final clinical judgment rests with the
-          treating physician.
+          Surfaces a prespecified Rush hs-TnI protocol only; it does not make
+          independent clinical decisions. Final clinical judgment rests with
+          the treating physician.
         </p>
       </div>
 

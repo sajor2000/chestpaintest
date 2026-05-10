@@ -7,6 +7,47 @@ import {
   DISPOSITIONS,
 } from "./constants";
 
+function textFromMessageContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .map((part) => {
+      if (
+        typeof part === "object" &&
+        part !== null &&
+        "type" in part &&
+        part.type === "text" &&
+        "text" in part &&
+        typeof part.text === "string"
+      ) {
+        return part.text;
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function hasExplicitLowClinicalSuspicion(messages: unknown[]) {
+  return messages.some((message) => {
+    if (
+      typeof message !== "object" ||
+      message === null ||
+      !("role" in message) ||
+      message.role !== "user" ||
+      !("content" in message)
+    ) {
+      return false;
+    }
+
+    const text = textFromMessageContent(message.content);
+    return /(?:clinical suspicion(?: for acs)?|suspicion for acs)[^\n.]*\blow\b|\blow\b[^\n.]*(?:clinical suspicion(?: for acs)?|suspicion for acs)/i.test(
+      text
+    );
+  });
+}
+
 export const assessEkg = tool({
   description:
     "Assess EKG findings to determine STEMI status and ischemic changes. Call this first when starting the pathway.",
@@ -46,6 +87,12 @@ export const evaluateTroponin = tool({
     "Evaluate a high-sensitivity troponin I value against sex-specific 99th percentile URL thresholds.",
   inputSchema: z.object({
     value: z.number().nonnegative().describe("HST value in ng/L"),
+    value_source: z
+      .string()
+      .min(1)
+      .describe(
+        "Verbatim clinician-provided source text showing this is an HST, hs-TnI, or troponin value in ng/L. The user's answer itself is sufficient when it includes a numeric value plus HST, hs-TnI, troponin, or ng/L. Do not use symptom duration, onset, ESRD, ongoing pain, sex, or suspicion answers."
+      ),
     hour: z.enum(["0", "2", "4"]).describe("Timepoint of the draw"),
     sex: z.enum(["male", "female"]).describe("Patient sex"),
     is_esrd: z.boolean().describe("Does the patient have ESRD?"),
@@ -58,15 +105,54 @@ export const evaluateTroponin = tool({
       .enum(["low", "moderate", "high"])
       .optional()
       .describe("Clinical suspicion for ACS"),
+    clinical_suspicion_source: z
+      .string()
+      .optional()
+      .describe(
+        "Verbatim clinician source for clinical suspicion. Required to use low suspicion for early rule-out; must explicitly say clinical suspicion is low or be the direct Low choice."
+      ),
   }),
-  execute: async ({
-    value,
-    hour,
-    sex,
-    is_esrd,
-    symptom_duration_hours,
-    clinical_suspicion,
-  }) => {
+  execute: async (
+    {
+      value,
+      value_source,
+      hour,
+      sex,
+      is_esrd,
+      symptom_duration_hours,
+      clinical_suspicion,
+    },
+    { messages }
+  ) => {
+    const sourceLooksLikeTroponin =
+      /\b(hst|hs-tni|troponin)\b/i.test(value_source) ||
+      /\bng\/?l\b/i.test(value_source);
+    const sourceIsBareNumber = /^\d+(?:\.\d+)?$/.test(value_source.trim());
+    const sourceExplicitlyNotTroponin =
+      /not an? (?:hst|hs-tni|troponin)/i.test(value_source) ||
+      /not .*troponin value/i.test(value_source);
+    const sourceIsKnownNonTroponinContext =
+      /\bsymptom duration\b/i.test(value_source) ||
+      /\bchest pain onset\b/i.test(value_source) ||
+      /\bongoing chest pain\b/i.test(value_source) ||
+      /\besrd\b/i.test(value_source);
+    const sourceHasNumericValue = /\d+(?:\.\d+)?/.test(value_source);
+
+    if (
+      sourceExplicitlyNotTroponin ||
+      sourceIsKnownNonTroponinContext ||
+      (value === 0 &&
+        !sourceLooksLikeTroponin &&
+        !sourceIsBareNumber &&
+        !sourceHasNumericValue)
+    ) {
+      return {
+        invalid_input: true,
+        message:
+          "Troponin evaluation was not performed because the provided source text does not explicitly document an HST/hs-TnI/troponin value. Ask for the troponin value in ng/L before calling evaluate_troponin.",
+      };
+    }
+
     const url99 = sex === "male" ? T.MALE_99_URL : T.FEMALE_99_URL;
     const above_url = value >= url99;
     const flags: string[] = [];
@@ -82,17 +168,36 @@ export const evaluateTroponin = tool({
       footnotes.push(FOOTNOTES.C);
     }
 
-    const early_rule_out_eligible =
+    const explicitLowSuspicion =
+      clinical_suspicion === "low" &&
+      hasExplicitLowClinicalSuspicion(messages);
+    const ruleOutBiomarkerContext =
       hour === "0" &&
       value < T.EARLY_RULE_OUT &&
       !is_esrd &&
-      (symptom_duration_hours ?? 0) > 3 &&
-      clinical_suspicion === "low";
+      (symptom_duration_hours ?? 0) > 3;
+    const needs_clinical_suspicion =
+      ruleOutBiomarkerContext &&
+      !explicitLowSuspicion &&
+      clinical_suspicion !== "moderate" &&
+      clinical_suspicion !== "high";
+
+    const early_rule_out_eligible =
+      ruleOutBiomarkerContext && explicitLowSuspicion;
 
     if (early_rule_out_eligible) {
       flags.push("Eligible for early MI rule-out (NPV 99.5%).");
       footnotes.push(FOOTNOTES.B);
     }
+    if (needs_clinical_suspicion) {
+      flags.push(
+        "Early rule-out cannot be finalized until the clinician explicitly answers clinical suspicion for ACS: Low, Moderate, or High."
+      );
+    }
+
+    const thresholdMessage = above_url
+      ? `HST ${value} ng/L is AT or ABOVE the ${sex} 99% URL of ${url99} ng/L.`
+      : `HST ${value} ng/L is below the ${sex} 99% URL of ${url99} ng/L.`;
 
     return {
       value,
@@ -101,11 +206,12 @@ export const evaluateTroponin = tool({
       url_99_threshold: url99,
       above_url,
       early_rule_out_eligible,
+      needs_clinical_suspicion,
       flags,
       footnotes,
-      message: above_url
-        ? `HST ${value} ng/L is AT or ABOVE the ${sex} 99% URL of ${url99} ng/L.`
-        : `HST ${value} ng/L is below the ${sex} 99% URL of ${url99} ng/L.`,
+      message: needs_clinical_suspicion
+        ? `${thresholdMessage} Ask the clinician to choose clinical suspicion for ACS: Low, Moderate, or High before finalizing early rule-out.`
+        : thresholdMessage,
     };
   },
 });
@@ -124,6 +230,7 @@ export const calculateDelta = tool({
       .describe("Timepoint of the current draw (2hr or 4hr)"),
   }),
   execute: async ({ hst_0hr, hst_current, hour }) => {
+    const signed_delta = hst_current - hst_0hr;
     const absolute_delta = Math.abs(hst_current - hst_0hr);
     const direction =
       hst_current > hst_0hr
@@ -158,16 +265,50 @@ export const calculateDelta = tool({
           ? "intermediate"
           : "minimal";
     const needs_4hr_hst = delta_category === "intermediate";
+    const clinical_delta_flag =
+      delta_category === "significant"
+        ? "CLINICALLY_SIGNIFICANT_DELTA"
+        : delta_category === "intermediate"
+          ? "INTERMEDIATE_DELTA_REQUIRES_4HR"
+          : "NO_CLINICALLY_SIGNIFICANT_DELTA";
+    const math_summary = `${hst_current} - ${hst_0hr} = ${
+      signed_delta >= 0 ? "+" : ""
+    }${signed_delta} ng/L`;
+    const logic_summary = significant
+      ? `Clinically significant delta by pathway rule: ${method}.`
+      : needs_4hr_hst
+        ? "Intermediate delta by pathway rule: obtain 4-hour HST and repeat EKG before final disposition."
+        : `No clinically significant delta by pathway rule: ${method}.`;
+    const recommendations =
+      delta_category === "significant"
+        ? [
+            "Flag this as a clinically significant delta in the pathway.",
+            "Use this delta_range value as significant when calling determine_disposition.",
+            "Remember that a falling significant delta can still indicate recent MI.",
+          ]
+        : needs_4hr_hst
+          ? [
+              "Do not finalize disposition from this delta alone.",
+              "Obtain 4-hour HST and repeat EKG, then rerun delta logic.",
+            ]
+          : [
+              "Continue the pathway using delta_range minimal unless another high-risk feature is present.",
+            ];
 
     return {
       hst_0hr,
       hst_current,
       hour,
+      signed_delta,
       absolute_delta,
       direction,
       significant,
       delta_category,
       needs_4hr_hst,
+      clinical_delta_flag,
+      math_summary,
+      logic_summary,
+      recommendations,
       method,
       footnote: FOOTNOTES.G,
       message: significant
@@ -194,6 +335,13 @@ const LOW_RISK_DISCHARGE_RECOMMENDATIONS = [
   "Review return precautions for recurrent, worsening, or persistent chest pain.",
   "Arrange outpatient follow-up according to local chest pain pathway practice.",
   "Document the low-risk pathway criteria, shared decision-making, and follow-up plan.",
+];
+
+const LOW_RISK_CHEST_PAIN_CHARTING_PROMPTS = [
+  "Document exact chest pain onset time and symptom duration used for pathway routing.",
+  "Document pain character, location, radiation, exertional component, and whether pain is ongoing.",
+  "Document associated symptoms such as dyspnea, diaphoresis, nausea, syncope, or palpitations.",
+  "Document why ACS suspicion is low and which pathway criteria supported low-risk disposition.",
 ];
 
 export const calculateHeartScore = tool({
@@ -275,8 +423,9 @@ export const determineDisposition = tool({
       .boolean()
       .describe("Has a 4-hour HST result been obtained?"),
   }),
-  execute: async (input) => {
+  execute: async (input, { messages }) => {
     const significant_delta = input.delta_range === "significant";
+    const explicitLowSuspicion = hasExplicitLowClinicalSuspicion(messages);
 
     if (input.early_rule_out && input.is_esrd) {
       return {
@@ -287,6 +436,17 @@ export const determineDisposition = tool({
       };
     }
 
+    if (input.early_rule_out && !explicitLowSuspicion) {
+      return {
+        risk: "PENDING",
+        disposition:
+          "Clinical suspicion for ACS must be explicitly documented as Low before early rule-out can be finalized.",
+        rationale:
+          "Early MI rule-out is blocked until the clinician answers the clinical suspicion prompt.",
+        footnotes: [],
+      };
+    }
+
     if (input.early_rule_out) {
       return {
         risk: "LOW",
@@ -294,6 +454,7 @@ export const determineDisposition = tool({
         rationale:
           "Early MI rule-out met: HST <5 ng/L, symptoms >3hr, low clinical suspicion. NPV 99.5%.",
         recommendations: LOW_RISK_DISCHARGE_RECOMMENDATIONS,
+        chest_pain_charting_prompts: LOW_RISK_CHEST_PAIN_CHARTING_PROMPTS,
         footnotes: [FOOTNOTES.B],
       };
     }
@@ -388,6 +549,7 @@ export const determineDisposition = tool({
         rationale:
           `No significant delta, below 99% URL, qualifying criteria: ${qualifiers.join(", ")}.`,
         recommendations: LOW_RISK_DISCHARGE_RECOMMENDATIONS,
+        chest_pain_charting_prompts: LOW_RISK_CHEST_PAIN_CHARTING_PROMPTS,
         footnotes: [],
       };
     }
