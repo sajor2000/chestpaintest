@@ -8,6 +8,7 @@ import {
   cleanQuickReplyPromptText,
   cleanRepeatedQuestionText,
   getPathwayStep,
+  getStepGuidance,
   isDuplicateQuickReplyPromptText,
   normalizeQuickReplyOptions,
   PATHWAY_STEPS,
@@ -212,6 +213,49 @@ function PathwayRail({ activeStep }: { activeStep: PathwayStepId }) {
         })}
       </ol>
     </nav>
+  );
+}
+
+function GuidedStepPanel({ activeStep }: { activeStep: PathwayStepId }) {
+  const guidance = getStepGuidance(activeStep);
+  const stepNumber = PATHWAY_STEPS.findIndex((step) => step.id === activeStep) + 1;
+
+  return (
+    <section
+      aria-label="Current CDS guidance"
+      data-testid="guided-cds-panel"
+      className="shrink-0 border-b border-gray-200 bg-[#f9fbfa] px-4 py-3"
+    >
+      <div className="mx-auto grid max-w-6xl gap-3 md:grid-cols-[1.1fr_1fr_1fr]">
+        <div className="rounded-md border border-[#006332]/15 bg-white px-3 py-2.5">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-[#006332]">
+            Current protocol step {stepNumber}
+          </div>
+          <div className="mt-1 text-sm font-semibold text-[#222]">
+            {guidance.title}
+          </div>
+          <div className="mt-1 text-xs leading-snug text-[#494949]">
+            {guidance.needNow}
+          </div>
+        </div>
+        <div className="rounded-md border border-gray-200 bg-white px-3 py-2.5">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-[#6b6b6b]">
+            Why this node matters
+          </div>
+          <div className="mt-1 text-xs leading-snug text-[#353535]">
+            {guidance.why}
+          </div>
+        </div>
+        <div className="rounded-md border border-[#c8902e]/30 bg-[#fffaf0] px-3 py-2.5">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-[#7a4a00]">
+            Guardrail
+          </div>
+          <div className="mt-1 text-xs leading-snug text-[#353535]">
+            {guidance.watchFor}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -526,6 +570,8 @@ export default function Chat() {
       <div className="h-[3px] bg-[#c8902e] shrink-0" />
 
       <PathwayRail activeStep={activeStep} />
+
+      <GuidedStepPanel activeStep={activeStep} />
 
       {/* Collapsible pathway reference */}
       {showPathway && (

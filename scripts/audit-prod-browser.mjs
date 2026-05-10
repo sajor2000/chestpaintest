@@ -120,6 +120,10 @@ async function waitForAppReady(page) {
     page.getByRole("navigation", { name: /hs-TnI pathway progress/i }),
   ], 15_000);
   await firstUsable([
+    page.getByTestId("guided-cds-panel"),
+    page.getByRole("region", { name: /Current CDS guidance/i }),
+  ], 15_000);
+  await firstUsable([
     page.getByTestId("message-list"),
     page.getByText(/Ready to guide you through/i),
     page.locator("body"),
@@ -230,6 +234,11 @@ async function runBrowserAudit(browser) {
     await openFresh(page);
     const title = await page.title();
     assert(title.includes("Chest Pain CDS"), `unexpected page title: ${title}`);
+    const text = await bodyText(page);
+    assert(
+      /Current protocol step|Why this node matters|Guardrail/i.test(text),
+      "guided CDS panel did not render"
+    );
     await assertNoDuplicatePromptFiller(page);
     const file = await screenshot(page, "desktop-initial");
     return `title="${title}", screenshot=${file}`;

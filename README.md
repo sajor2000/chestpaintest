@@ -13,11 +13,12 @@ The chatbot walks the physician through the pathway step by step:
 5. **HEART Score** — LLM-guided 5-component scoring with visual breakdown card
 6. **Disposition** — Low (discharge) / Intermediate (observation) / Chronic Injury / High (admit) / Pending (4hr or repeat HST required)
 
-**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions. The current suite has 181 tests, including 87 pathway tool tests plus a 30-case original decision-tree audit that exercises the major Rush hs-TnI branches end to end.
+**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic tool functions. The current suite has 182 tests, including 87 pathway tool tests plus a 30-case original decision-tree audit that exercises the major Rush hs-TnI branches end to end.
 
 ## Features
 
 - **Quick-reply buttons** for binary/choice questions (STEMI yes/no, sex, ESRD, etc.)
+- **Guided CDS panel** that shows the active pathway node, what the physician needs to provide now, why that node matters, and the relevant protocol guardrail
 - **ECG image upload** with optional AI-assisted second opinion (MD interpretation is always authoritative)
 - **HEART Score card** — visual 5-row breakdown with per-component scores, labels, and risk-level color coding; LLM walks clinician through each component with scoring criteria
 - **Delta math card** — displays the HST subtraction, pathway rule, delta category, and a clear clinically significant delta flag when criteria are met
@@ -37,7 +38,7 @@ The chatbot walks the physician through the pathway step by step:
 | AI SDK | Vercel AI SDK v6 (`@ai-sdk/azure`, `@ai-sdk/react`) |
 | LLM | Azure OpenAI GPT-4.1-mini (Chat Completions API) |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest (181 tests; 87 pathway tool tests; 30-case decision-tree audit) plus a live production browser audit harness |
+| Testing | Vitest (182 tests; 87 pathway tool tests; 30-case decision-tree audit) plus a live production browser audit harness |
 | FHIR | SMART on FHIR scaffold; add `fhirclient` during Phase 2 Epic integration |
 
 ## Setup
@@ -85,7 +86,7 @@ Use `.env.example` as the template. Do not commit `.env.local`.
 npx vitest run
 ```
 
-181 tests cover the pathway logic, 30-case original decision-tree audit, request sanitization, route guard, prompt-backed pathway state guardrails, system-prompt safety framing, pathway UI workflow, and the production browser audit command contract. The pathway tests verify the Rush hs-TnI pathway PDF branches and boundary values:
+182 tests cover the pathway logic, 30-case original decision-tree audit, request sanitization, route guard, prompt-backed pathway state guardrails, system-prompt safety framing, pathway UI workflow, and the production browser audit command contract. The pathway tests verify the Rush hs-TnI pathway PDF branches and boundary values:
 - STEMI/EQV diamond routing
 - 99% URL thresholds (boundary values)
 - Early MI rule-out (all 6 gate conditions)

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cleanQuickReplyPromptText,
   cleanRepeatedQuestionText,
+  getStepGuidance,
   getPathwayStep,
   isDuplicateQuickReplyPromptText,
   normalizeQuickReplyOptions,
@@ -260,6 +261,20 @@ describe("getPathwayStep", () => {
   });
 });
 
+describe("getStepGuidance", () => {
+  it("returns physician-facing guidance for the active pathway step", () => {
+    expect(getStepGuidance("troponin0")).toMatchObject({
+      title: "0-hour HST",
+      needNow: expect.stringContaining("0-hour HST"),
+      why: expect.stringContaining("sex-specific"),
+    });
+
+    expect(getStepGuidance("disposition").watchFor).toContain(
+      "treating physician"
+    );
+  });
+});
+
 describe("quick-reply prompt cleanup", () => {
   it("removes duplicated button-helper prose from visible assistant text", () => {
     expect(
@@ -279,6 +294,12 @@ describe("quick-reply prompt cleanup", () => {
         "Hello. Does the EKG show STEMI or STEMI equivalent? I will provide options."
       )
     ).toBe("Hello. Does the EKG show STEMI or STEMI equivalent?");
+
+    expect(
+      cleanQuickReplyPromptText(
+        "Does the EKG show STEMI or STEMI equivalent?\n(functions.suggest_followups)"
+      )
+    ).toBe("Does the EKG show STEMI or STEMI equivalent?");
   });
 
   it("detects duplicate follow-up text after quick-reply buttons", () => {

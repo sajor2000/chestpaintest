@@ -12,6 +12,13 @@ export type PathwayStep = {
   detail: string;
 };
 
+export type StepGuidance = {
+  title: string;
+  needNow: string;
+  why: string;
+  watchFor: string;
+};
+
 export const PATHWAY_STEPS: PathwayStep[] = [
   { id: "ekg", label: "EKG", detail: "STEMI and ischemic changes" },
   { id: "basics", label: "Basics", detail: "Sex, ESRD, onset" },
@@ -20,6 +27,49 @@ export const PATHWAY_STEPS: PathwayStep[] = [
   { id: "heart", label: "HEART", detail: "Risk score components" },
   { id: "disposition", label: "Disposition", detail: "Tool-confirmed final risk" },
 ];
+
+const STEP_GUIDANCE: Record<PathwayStepId, StepGuidance> = {
+  ekg: {
+    title: "EKG gate",
+    needNow: "Confirm STEMI/equivalent first, then ischemic ST or T-wave changes.",
+    why: "STEMI stops this pathway for immediate activation; ischemic changes trigger early cardiology consultation.",
+    watchFor: "Do not move to troponin until the EKG branch is explicit.",
+  },
+  basics: {
+    title: "Patient basics",
+    needNow: "Capture sex, ESRD status, symptom duration, onset context, and ongoing chest pain.",
+    why: "These fields set the sex-specific 99% URL and decide whether early rule-out is allowed.",
+    watchFor: "ESRD blocks early rule-out; short symptoms require repeat HST.",
+  },
+  troponin0: {
+    title: "0-hour HST",
+    needNow: "Enter the numeric 0-hour HST value in ng/L.",
+    why: "The initial HST is compared with sex-specific thresholds and may open the early rule-out branch.",
+    watchFor: "HST <5 still needs symptoms >3 hours and explicit low ACS suspicion.",
+  },
+  delta: {
+    title: "Serial HST",
+    needNow: "Enter 2-hour HST, repeat EKG status, and 4-hour HST if the delta is intermediate.",
+    why: "The pathway uses minimal, intermediate, and significant delta lanes to decide the next action.",
+    watchFor: "Delta 4-14 needs 4-hour HST; significant delta is high risk.",
+  },
+  heart: {
+    title: "HEART scoring",
+    needNow: "Score History, EKG, Age, Risk Factors, and Troponin with clinician confirmation.",
+    why: "HEART <4 can support low-risk disposition when no high-risk pathway flags are present.",
+    watchFor: "The app can suggest criteria, but the clinician owns each HEART component score.",
+  },
+  disposition: {
+    title: "Disposition",
+    needNow: "Review the tool-confirmed risk category, rationale, footnotes, and documentation prompts.",
+    why: "The final card summarizes the prespecified Rush pathway output for clinical review.",
+    watchFor: "Final judgment remains with the treating physician.",
+  },
+};
+
+export function getStepGuidance(step: PathwayStepId) {
+  return STEP_GUIDANCE[step];
+}
 
 const QUICK_REPLY_RULES: Array<{
   match: RegExp;
@@ -82,6 +132,7 @@ export function cleanQuickReplyPromptText(text: string) {
       ""
     )
     .replace(/\s*\bI will provide buttons for quick replies\.?/gi, "")
+    .replace(/\s*\(?\s*functions\.suggest_followups\s*\)?/gi, "")
     .replace(/\s*\bOptions:\s*[^\n.]+\.?/gi, "")
     .replace(/\s*\((?:please\s+)?(?:select|choose|respond)[^)]*\)/gi, "")
     .replace(/\s*\bPlease\s+(?:select|choose|respond)(?:\s+one)?\.?/gi, "")
