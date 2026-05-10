@@ -16,4 +16,20 @@ describe("production browser audit harness", () => {
     expect(script).toContain("PROD_BASE_URL");
     expect(script).toContain("30 canonical decision-tree cases");
   });
+
+  it("exposes a repeatable MD adversarial production stress command", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const script = readFileSync("scripts/audit-prod-md-stress.mjs", "utf8");
+
+    expect(packageJson.scripts?.["audit:prod:md-stress"]).toBe(
+      "node scripts/audit-prod-md-stress.mjs"
+    );
+    expect(script).toContain("MD_STRESS_API_LIMIT");
+    expect(script).toContain("MD_STRESS_BROWSER_LIMIT");
+    expect(script).toContain("data-pathway-state");
+    expect(script).toContain("output/md-stress");
+    expect(script).toContain("complaining MD");
+  });
 });
