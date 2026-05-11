@@ -29,9 +29,10 @@ npx vitest run
 npm run build
 npm audit --omit=dev
 npm run audit:prod:browser
+npm run audit:prod:md-stress
 ```
 
-Current expected suite coverage is 229 Vitest tests:
+Current expected suite coverage is 243 Vitest tests:
 
 - 87 deterministic pathway tests for Rush hs-TnI thresholds, explicit troponin source validation, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
 - 30 named original decision-tree tool cases plus 30 matching server-owned controller cases covering STEMI/EQV, ischemic EKG, sex-specific URL thresholds, early rule-out gates, ESRD exclusions, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain.
@@ -42,7 +43,7 @@ Current expected suite coverage is 229 Vitest tests:
 - 2 assistant stream cleanup tests covering server-side removal of forbidden button filler, including filler split across streamed token chunks.
 - 8 prompt-backed pathway state tests covering accepted-field extraction, latest correction precedence, normalized ESRD false parsing, and HEART false-positive parsing guards.
 - 8 system prompt safety-framing tests that require protocol-only wording, early rule-out flow, explicit troponin value gating, typed yes/no progression, typed HST source handling, explicit suspicion gating, final-disposition stop behavior, and clean quick-reply wording.
-- 1 production browser audit harness contract test covering the repeatable live production command and safe generated-artifact defaults.
+- Production audit harness contract tests covering repeatable live production commands and safe generated-artifact defaults.
 
 After any commit is pushed, confirm both remote checks:
 
@@ -64,20 +65,22 @@ After any commit is pushed, confirm both remote checks:
 - Quick-reply UX was tightened so the prompt asks the model not to repeat button labels in prose, and HEART score card labels now wrap instead of truncating clinical labels.
 - The UI now includes a guided-CDS panel that makes the original pathway easier to follow by showing the current node, needed clinician input, pathway rationale, and guardrail.
 - Live production browser audit is available through `npm run audit:prod:browser`; it exercises STEMI, ESRD, one typed low-risk pathway flow, and the API `data-pathway-state` controller seam against the target URL, then writes screenshots to ignored `output/playwright/` artifacts.
-- The next major safety improvement is durable authenticated persistence/audit trail around the stateless controller before Epic or clinical production use.
+- Live production MD stress audit is available through `npm run audit:prod:md-stress`; it replays 60 adversarial clinician API cases and six browser workflows against the target URL, then writes screenshots and summaries to ignored `output/md-stress/` artifacts.
+- The next major safety improvements are clinical owner sign-off, human-factors review, institutional access control, and durable authenticated persistence/audit trail before Epic or unsupervised clinical production use.
 
-## Current Release Verification (2026-05-10)
+## Current Release Verification (2026-05-11)
 
 - Branch: `main`
 - Current production URL: `https://rush-chest-pain-cds.vercel.app/`
-- Local verification passed:
+- Local verification expected before release:
   - `npx vitest run src/__tests__/pathway-decision-tree-30.test.ts`
   - `npx vitest run src/lib/pathway-state.test.ts src/lib/chat-route.test.ts src/lib/system-prompt.test.ts`
   - `npx vitest run`
   - `npm run lint`
   - `npm run build`
   - `npm run audit:prod:browser`
-- Live production browser audit exercises STEMI, ESRD, one typed low-risk pathway flow, and the API `data-pathway-state` controller seam against the deployed URL, then writes screenshots to ignored `output/playwright/` artifacts.
+  - `npm run audit:prod:md-stress`
+- Latest live production evidence from 2026-05-11: the MD stress API audit passed 60/60 adversarial cases, and the browser-only stress run passed 6/6 visible workflows with console health passing.
 
 ## PDF Fidelity Audit (2026-05-08)
 
@@ -122,12 +125,14 @@ A node-by-node audit of all 10+ PDF decision nodes confirmed full fidelity. No c
 
 ## Release Blockers
 
-Do not treat the app as ready for public clinical production use until these are cleared:
+Do not call the app production-grade clinical CDS until these are cleared:
 
 - Validate the implementation against the official Rush pathway source with a clinical owner.
-- Add institutional access control before public or Epic-embedded use.
+- Complete the sign-off workflow in `docs/validation/PRODUCTION_READINESS_CHECKLIST.md`.
+- Complete the ED/cardiology worksheet in `docs/validation/CLINICIAN_VALIDATION_PACK.md`.
+- Add institutional access control before public, pilot, or Epic-embedded use.
 - Add persistence and audit trail support before relying on the app for durable clinical documentation.
-- Add durable authenticated persistence and audit trail around the stateless deterministic controller before high-stakes use.
+- Add durable authenticated persistence and audit trail around the stateless deterministic controller before high-stakes or Epic-embedded use.
 
 ## Deployment Notes
 
