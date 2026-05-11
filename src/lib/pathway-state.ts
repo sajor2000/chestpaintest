@@ -67,6 +67,33 @@ function extractBoolean(text: string, yesPattern: RegExp, noPattern: RegExp) {
   return Boolean(yesMatch);
 }
 
+function extractLatestBoolean(
+  text: string,
+  yesPattern: RegExp,
+  noPattern: RegExp
+) {
+  const noMatches = [...text.matchAll(noPattern)].map((match) => ({
+    index: match.index,
+    end: match.index + match[0].length,
+    value: false,
+  }));
+  const yesMatches = [...text.matchAll(yesPattern)]
+    .filter((match) => {
+      const index = match.index;
+      return !noMatches.some((no) => no.index <= index && index < no.end);
+    })
+    .map((match) => ({
+      index: match.index,
+      end: match.index + match[0].length,
+      value: true,
+    }));
+
+  const latest = [...noMatches, ...yesMatches].sort(
+    (a, b) => a.index - b.index
+  ).at(-1);
+  return latest?.value;
+}
+
 function extractLatestNumber(text: string, patterns: RegExp[]) {
   let latest: { index: number; value: number } | undefined;
   for (const pattern of patterns) {
@@ -78,6 +105,18 @@ function extractLatestNumber(text: string, patterns: RegExp[]) {
     }
   }
   return latest?.value;
+}
+
+function removeRepeatEkgClauses(text: string) {
+  return text
+    .replace(
+      /\b(?:repeat\s+)?[24]\s*[- ]?(?:hour|hr|h)?\s*repeat\s+ekg[^.\n]*/gi,
+      ""
+    )
+    .replace(
+      /\brepeat\s+[24]\s*[- ]?(?:hour|hr|h)?\s*ekg[^.\n]*/gi,
+      ""
+    );
 }
 
 function extractLatestHeartComponent(
@@ -182,15 +221,15 @@ export function resolvePathwayState(messages: UIMessage[]): PathwayState {
   const texts = userTexts(messages);
 
   const stemiOrEquivalent = latestMatch(texts, (text) =>
-    extractBoolean(
+    extractLatestBoolean(
       text,
       /\b(?:yes\s*-\s*)?(?:stemi|stemi equivalent|stemi\/eqv)\b(?![^.\n]*\bno\b)/gi,
-      /\bno\s+(?:stemi|stemi equivalent|stemi\/eqv)\b|\bno\s+stemi\s+or\s+stemi equivalent\b/gi
+      /\bno\s+stemi\s+or\s+stemi equivalent\b|\bno\s+(?:stemi equivalent|stemi|stemi\/eqv)\b/gi
     )
   );
   const ischemicChanges = latestMatch(texts, (text) =>
-    extractBoolean(
-      text,
+    extractLatestBoolean(
+      removeRepeatEkgClauses(text),
       /\b(?:yes\s*-\s*)?ischemic(?:\s+st\/?t|\s+st|\s+t-wave|\s+changes)?\b/gi,
       /\bno\s+ischemic\b|\bno\s+ischemic\s+st\/?t\b|\bno\s+ischemic\s+st\s+or\s+t-wave\b/gi
     )
@@ -229,20 +268,20 @@ export function resolvePathwayState(messages: UIMessage[]): PathwayState {
 
   const hst0 = latestMatch(texts, (text) =>
     extractLatestNumber(text, [
-      /\b0\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-tni|troponin)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
-      /\b(?:hst|hs-tni|troponin)\s*(?:0\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+      /\b0\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-?tni|troponin|trop)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+      /\b(?:hst|hs-?tni|troponin|trop)\s*(?:0\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
     ])
   );
   const hst2 = latestMatch(texts, (text) =>
     extractLatestNumber(text, [
-      /\b2\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-tni|troponin)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
-      /\b(?:hst|hs-tni|troponin)\s*(?:2\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+      /\b2\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-?tni|troponin|trop)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+      /\b(?:hst|hs-?tni|troponin|trop)\s*(?:2\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
     ])
   );
   const hst4 = latestMatch(texts, (text) =>
     extractLatestNumber(text, [
-      /\b4\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-tni|troponin)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
-      /\b(?:hst|hs-tni|troponin)\s*(?:4\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+      /\b4\s*[- ]?\s*(?:hour|hr|h)\s*(?:hst|hs-?tni|troponin|trop)(?:\s+(?:is|=|value:))?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
+      /\b(?:hst|hs-?tni|troponin|trop)\s*(?:4\s*[- ]?\s*(?:hour|hr|h))\s*(?:is|=|value:)?\s*(\d+(?:\.\d+)?)\s*(?:ng\/?l)?/gi,
     ])
   );
 

@@ -80,6 +80,27 @@ describe("server-owned pathway state", () => {
     expect(state.fields.chronicUnchangedHst).toBe(true);
   });
 
+  it("prefers the latest explicit boolean correction inside one clinician message", () => {
+    const state = resolvePathwayState([
+      userMessage(
+        "No STEMI, actually STEMI equivalent. No ischemic changes, actually ischemic changes."
+      ),
+    ]);
+
+    expect(state.fields.stemiOrEquivalent).toBe(true);
+    expect(state.fields.ischemicChanges).toBe(true);
+  });
+
+  it("does not let repeat EKG text overwrite the initial ischemic EKG field", () => {
+    const state = resolvePathwayState([
+      userMessage(
+        "No STEMI. No ischemic changes. 2-hour repeat EKG ischemic changes: no."
+      ),
+    ]);
+
+    expect(state.fields.ischemicChanges).toBe(false);
+  });
+
   it("treats normalized no-ESRD answers as false instead of matching ESRD as present", () => {
     const state = resolvePathwayState([
       userMessage("No STEMI. No ischemic changes. Patient sex: male."),
@@ -107,6 +128,18 @@ describe("server-owned pathway state", () => {
 
     expect(state.fields.hst0).toBe(6);
     expect(state.fields.hst2).toBe(7);
+    expect(state.fields.hst4).toBe(9);
+  });
+
+  it("accepts trop shorthand as an HST timepoint synonym", () => {
+    const state = resolvePathwayState([
+      userMessage(
+        "0-hour trop is 6 ng/L. 2-hour hsTnI is 8 ng/L. 4-hour hs-TnI is 9 ng/L."
+      ),
+    ]);
+
+    expect(state.fields.hst0).toBe(6);
+    expect(state.fields.hst2).toBe(8);
     expect(state.fields.hst4).toBe(9);
   });
 

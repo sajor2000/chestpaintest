@@ -63,6 +63,65 @@ describe("sanitizeClientMessages", () => {
     ]);
   });
 
+  it("keeps enough long-pathway history to preserve the initial STEMI answer", () => {
+    const turns = [
+      ["u1", "user", "Start the Rush hs-TnI pathway."],
+      ["a1", "assistant", "Does the EKG show STEMI or STEMI equivalent?"],
+      ["u2", "user", "No STEMI"],
+      ["a2", "assistant", "Are there ischemic ST or T-wave changes on the EKG?"],
+      ["u3", "user", "No ischemic changes"],
+      ["a3", "assistant", "Patient sex?"],
+      ["u4", "user", "Male"],
+      ["a4", "assistant", "Does the patient have end-stage renal disease (ESRD)?"],
+      ["u5", "user", "No ESRD"],
+      ["a5", "assistant", "How many hours have the symptoms been present?"],
+      ["u6", "user", "5 hours"],
+      ["a6", "assistant", "What is the 0-hour HST value in ng/L?"],
+      ["u7", "user", "0-hour HST is 6 ng/L"],
+      ["a7", "assistant", "What is the 2-hour HST value in ng/L?"],
+      ["u8", "user", "2-hour HST is 8 ng/L"],
+      [
+        "a8",
+        "assistant",
+        "Does the repeat 2-hour EKG show ischemic ST or T-wave changes?",
+      ],
+      ["u9", "user", "No ischemic changes"],
+      ["a9", "assistant", "Is the patient having ongoing cardiac chest pain?"],
+      ["u10", "user", "No ongoing pain"],
+      ["a10", "assistant", "How suspicious is the history for ACS?"],
+      ["u11", "user", "1"],
+      ["a11", "assistant", "EKG score for HEART?"],
+      ["u12", "user", "1"],
+      ["a12", "assistant", "Patient age category for HEART?"],
+      ["u13", "user", "1"],
+      ["a13", "assistant", "Risk factor burden for HEART?"],
+      ["u14", "user", "1"],
+      ["a14", "assistant", "Troponin component for HEART?"],
+      ["u15", "user", "0"],
+      ["a15", "assistant", "Is there recent normal cardiac testing on file?"],
+      ["u16", "user", "no"],
+      ["a16", "assistant", "Is there known chronic unchanged HST elevation?"],
+      ["u17", "user", "yes"],
+    ].map(([id, role, text]) => ({
+      id,
+      role,
+      parts: [{ type: "text", text }],
+    }));
+
+    const messages = sanitizeClientMessages(turns);
+
+    expect(
+      messages.some(
+        (message) =>
+          message.role === "user" &&
+          message.parts.some(
+            (part) =>
+              part.type === "text" && part.text.toLowerCase().includes("no stemi")
+          )
+      )
+    ).toBe(true);
+  });
+
   it("keeps the current assistant question so short typed answers have context", () => {
     const messages = sanitizeClientMessages([
       {
@@ -227,6 +286,58 @@ describe("sanitizeClientMessages", () => {
     });
   });
 
+  it("labels terse no answers to the active STEMI question", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-stemi",
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: "Does the EKG show STEMI or STEMI equivalent?",
+          },
+        ],
+      },
+      {
+        id: "user-stemi",
+        role: "user",
+        parts: [{ type: "text", text: "no" }],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-stemi",
+      role: "user",
+      parts: [{ type: "text", text: "No STEMI." }],
+    });
+  });
+
+  it("labels terse no answers to the active ischemic-change question", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-ischemic",
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: "Are there ischemic ST or T-wave changes on the EKG?",
+          },
+        ],
+      },
+      {
+        id: "user-ischemic",
+        role: "user",
+        parts: [{ type: "text", text: "no" }],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-ischemic",
+      role: "user",
+      parts: [{ type: "text", text: "No ischemic changes." }],
+    });
+  });
+
   it("labels typed onset answers with the active question context", () => {
     const messages = sanitizeClientMessages([
       {
@@ -296,6 +407,69 @@ describe("sanitizeClientMessages", () => {
     });
   });
 
+  it("labels typed HST values when the unit appears before the HST label", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-hst",
+        role: "assistant",
+        parts: [{ type: "text", text: "What is the 0-hour HST value?" }],
+      },
+      {
+        id: "user-hst",
+        role: "user",
+        parts: [{ type: "text", text: "3 ng/L HST" }],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-hst",
+      role: "user",
+      parts: [{ type: "text", text: "0-hour HST value: 3 ng/L." }],
+    });
+  });
+
+  it("labels typed HST values when clinicians use trop shorthand", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-hst",
+        role: "assistant",
+        parts: [{ type: "text", text: "What is the 0-hour HST value?" }],
+      },
+      {
+        id: "user-hst",
+        role: "user",
+        parts: [{ type: "text", text: "trop 6 ng/L" }],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-hst",
+      role: "user",
+      parts: [{ type: "text", text: "0-hour HST value: 6 ng/L." }],
+    });
+  });
+
+  it("labels typed HST values when clinicians omit the hs-TnI hyphen", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-hst",
+        role: "assistant",
+        parts: [{ type: "text", text: "What is the 0-hour HST value?" }],
+      },
+      {
+        id: "user-hst",
+        role: "user",
+        parts: [{ type: "text", text: "hsTnI is 6" }],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-hst",
+      role: "user",
+      parts: [{ type: "text", text: "0-hour HST value: 6 ng/L." }],
+    });
+  });
+
   it("labels typed HST values when the active prompt is an instruction without a question mark", () => {
     const messages = sanitizeClientMessages([
       {
@@ -346,6 +520,130 @@ describe("sanitizeClientMessages", () => {
           text: "Ongoing chest pain answer: No ongoing pain. This is not an HST/troponin value.",
         },
       ],
+    });
+  });
+
+  it("preserves bundled HEART data after an ongoing-pain yes/no answer", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-pain",
+        role: "assistant",
+        parts: [{ type: "text", text: "Is the chest pain ongoing?" }],
+      },
+      {
+        id: "user-pain-heart",
+        role: "user",
+        parts: [
+          {
+            type: "text",
+            text: "No ongoing pain. HEART components: history 0, EKG 0.",
+          },
+        ],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-pain-heart",
+      role: "user",
+      parts: [
+        {
+          type: "text",
+          text: "Ongoing chest pain answer: No ongoing pain. This is not an HST/troponin value. No ongoing pain. HEART components: history 0, EKG 0.",
+        },
+      ],
+    });
+  });
+
+  it("labels terse yes/no answers for recent normal cardiac testing", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-recent-testing",
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: "Is there recent normal cardiac testing on file?",
+          },
+        ],
+      },
+      {
+        id: "user-recent-testing",
+        role: "user",
+        parts: [{ type: "text", text: "yes" }],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-recent-testing",
+      role: "user",
+      parts: [
+        {
+          type: "text",
+          text: "Recent normal cardiac testing is present.",
+        },
+      ],
+    });
+  });
+
+  it("labels terse yes/no answers for chronic unchanged HST", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-chronic-hst",
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: "Is there known chronic unchanged HST elevation?",
+          },
+        ],
+      },
+      {
+        id: "user-chronic-hst",
+        role: "user",
+        parts: [{ type: "text", text: "no" }],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-chronic-hst",
+      role: "user",
+      parts: [{ type: "text", text: "No known chronic unchanged HST." }],
+    });
+  });
+
+  it("labels terse HEART component score answers with active component context", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-heart-history",
+        role: "assistant",
+        parts: [{ type: "text", text: "How suspicious is the history for ACS?" }],
+      },
+      {
+        id: "user-heart-history",
+        role: "user",
+        parts: [{ type: "text", text: "0" }],
+      },
+      {
+        id: "assistant-heart-ekg",
+        role: "assistant",
+        parts: [{ type: "text", text: "EKG score for HEART?" }],
+      },
+      {
+        id: "user-heart-ekg",
+        role: "user",
+        parts: [{ type: "text", text: "1 - Non-specific changes" }],
+      },
+    ]);
+
+    expect(messages.at(-3)).toEqual({
+      id: "user-heart-history",
+      role: "user",
+      parts: [{ type: "text", text: "HEART components: history 0." }],
+    });
+    expect(messages.at(-1)).toEqual({
+      id: "user-heart-ekg",
+      role: "user",
+      parts: [{ type: "text", text: "HEART components: EKG 1." }],
     });
   });
 

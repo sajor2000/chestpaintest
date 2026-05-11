@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "audit:prod:browser": "node scripts/audit-prod-browser.mjs"
+    "audit:prod:browser": "node scripts/audit-prod-browser.mjs",
+    "audit:prod:md-stress": "node scripts/audit-prod-md-stress.mjs"
   },
   "dependencies": {
     "@ai-sdk/azure": "^3.0.55",

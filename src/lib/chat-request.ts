@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 
-const MAX_MESSAGES = 30;
+const MAX_MESSAGES = 80;
 const MAX_MESSAGE_LENGTH = 2000;
 const MAX_FILE_DATA_URL_LENGTH = 1_400_000; // ~1 MB base64
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -36,6 +36,13 @@ function normalizeTextForPathwayContext(
   activeQuestion?: string | null
 ) {
   const trimmed = text.trim().toLowerCase();
+  const extraPathwayText =
+    text.trim().length > 24 &&
+    /\b(heart components?|symptoms?|0\s*[- ]?hour|2\s*[- ]?hour|4\s*[- ]?hour|hst|hs-?tni|troponin|trop|clinical suspicion)\b/i.test(
+      text
+    )
+      ? ` ${text.trim()}`
+      : "";
   if (trimmed === "male" || trimmed === "female") {
     return `Patient sex: ${trimmed}.`;
   }
@@ -43,21 +50,62 @@ function normalizeTextForPathwayContext(
   const question = activeQuestion?.toLowerCase() ?? "";
   const yesNo = normalizeYesNo(text);
 
+  if (question.includes("stemi")) {
+    if (yesNo) return yesNo === "yes" ? "Yes - STEMI." : "No STEMI.";
+  }
+
   if (question.includes("esrd") || question.includes("end-stage renal")) {
-    if (yesNo) return `ESRD: ${yesNo}. This is not an HST/troponin value.`;
+    if (yesNo) {
+      return `ESRD: ${yesNo}. This is not an HST/troponin value.${extraPathwayText}`;
+    }
   }
 
   if (question.includes("ongoing") && question.includes("chest pain")) {
     if (yesNo) {
       const label =
         yesNo === "yes" ? "Yes - ongoing pain" : "No ongoing pain";
-      return `Ongoing chest pain answer: ${label}. This is not an HST/troponin value.`;
+      return `Ongoing chest pain answer: ${label}. This is not an HST/troponin value.${extraPathwayText}`;
     }
   }
 
   if (question.includes("clinical suspicion")) {
     if (["low", "moderate", "high"].includes(trimmed)) {
       return `Clinical suspicion for ACS: ${trimmed}.`;
+    }
+  }
+
+  if (question.includes("recent normal") && question.includes("testing")) {
+    if (yesNo) {
+      return yesNo === "yes"
+        ? `Recent normal cardiac testing is present.${extraPathwayText}`
+        : `No recent normal cardiac testing.${extraPathwayText}`;
+    }
+  }
+
+  if (question.includes("chronic") && question.includes("hst")) {
+    if (yesNo) {
+      return yesNo === "yes"
+        ? `Known chronic unchanged HST.${extraPathwayText}`
+        : `No known chronic unchanged HST.${extraPathwayText}`;
+    }
+  }
+
+  const heartScore = text.trim().match(/^([012])(?:\s*[-–—].*)?$/)?.[1];
+  if (heartScore) {
+    const heartComponent =
+      question.includes("history") && question.includes("acs")
+        ? "history"
+        : question.includes("ekg") && question.includes("heart")
+          ? "EKG"
+          : question.includes("age") && question.includes("heart")
+            ? "age"
+            : question.includes("risk factor")
+              ? "risk factors"
+              : question.includes("troponin") && question.includes("heart")
+                ? "troponin"
+                : null;
+    if (heartComponent) {
+      return `HEART components: ${heartComponent} ${heartScore}.`;
     }
   }
 
@@ -74,6 +122,19 @@ function normalizeTextForPathwayContext(
         ? `${timepoint}-hour repeat EKG ischemic changes`
         : "Repeat EKG ischemic changes";
       return `${label}: ${yesNo}.`;
+    }
+  }
+
+  if (
+    question.includes("ischemic") &&
+    (question.includes("ekg") ||
+      question.includes("st") ||
+      question.includes("t-wave"))
+  ) {
+    if (yesNo) {
+      return yesNo === "yes"
+        ? "Yes - ischemic changes."
+        : "No ischemic changes.";
     }
   }
 
@@ -101,13 +162,15 @@ function normalizeTextForPathwayContext(
     (question.includes("hst") ||
       question.includes("hs-tni") ||
       question.includes("troponin")) &&
-    /^\d+(?:\.\d+)?(?:\s*ng\/?l)?$/i.test(text.trim())
+    /^(?:\d+(?:\.\d+)?(?:\s*ng\/?l)?|\d+(?:\.\d+)?\s*ng\/?l\s*(?:hst|hs-?tni|troponin|trop)|(?:hst|hs-?tni|troponin|trop)\s*(?:is|=)?\s*\d+(?:\.\d+)?(?:\s*ng\/?l)?)$/i.test(
+      text.trim()
+    )
   ) {
     const timepoint =
       question.match(/\b(0|2|4)[-\s]?(?:hour|hr)\b/)?.[1] ??
       question.match(/\b(0|2|4)h\b/)?.[1];
     const label = timepoint ? `${timepoint}-hour HST value` : "HST value";
-    const value = text.trim().replace(/\s*ng\/?l$/i, "");
+    const value = text.trim().match(/\d+(?:\.\d+)?/)?.[0] ?? text.trim();
     return `${label}: ${value} ng/L.`;
   }
 
