@@ -7,6 +7,7 @@ const PROD_BASE_URL =
   process.env.PROD_BASE_URL ?? "https://rush-chest-pain-cds.vercel.app";
 const OUTPUT_DIR = path.resolve("output/md-stress");
 const STEP_TIMEOUT_MS = Number(process.env.MD_STRESS_STEP_TIMEOUT_MS ?? 90_000);
+const BROWSER_SETTLE_MS = Number(process.env.MD_STRESS_BROWSER_SETTLE_MS ?? 750);
 const API_LIMIT = Number(process.env.MD_STRESS_API_LIMIT ?? 60);
 const BROWSER_LIMIT = Number(process.env.MD_STRESS_BROWSER_LIMIT ?? 6);
 const API_CONCURRENCY = Number(process.env.MD_STRESS_API_CONCURRENCY ?? 4);
@@ -669,32 +670,91 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function firstUsable(locators, timeout = 5_000) {
+function candidate(name, locator) {
+  return { name, locator };
+}
+
+async function visibleEnabledCount(locator) {
+  const count = await locator.count();
+  let visible = 0;
+  let enabled = 0;
+  for (let index = 0; index < count; index += 1) {
+    const item = locator.nth(index);
+    if (await item.isVisible().catch(() => false)) visible += 1;
+    if (await item.isEnabled().catch(() => false)) enabled += 1;
+  }
+  return { count, visible, enabled };
+}
+
+async function browserDiagnostics(page, candidates) {
+  const candidateSummary = [];
+  for (const entry of candidates) {
+    try {
+      const counts = await visibleEnabledCount(entry.locator);
+      candidateSummary.push(`${entry.name}=${JSON.stringify(counts)}`);
+    } catch (error) {
+      candidateSummary.push(
+        `${entry.name}=error:${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  const buttons = await enabledButtonTexts(page).catch(() => []);
+  const body = await bodyText(page).catch(() => "");
+  return [
+    `candidates: ${candidateSummary.join("; ")}`,
+    `enabled buttons: ${JSON.stringify(buttons.slice(0, 20))}`,
+    `body: ${JSON.stringify(body.slice(-600))}`,
+  ].join(" | ");
+}
+
+async function firstUsable(
+  page,
+  label,
+  candidates,
+  { timeout = 5_000, requireEnabled = true } = {}
+) {
   const deadline = Date.now() + timeout;
   let lastError;
   while (Date.now() < deadline) {
-    for (const locator of locators) {
+    for (const entry of candidates) {
       try {
-        const count = await locator.count();
+        const count = await entry.locator.count();
         for (let index = 0; index < count; index += 1) {
-          const candidate = locator.nth(index);
-          if (await candidate.isVisible().catch(() => false)) return candidate;
+          const item = entry.locator.nth(index);
+          const visible = await item.isVisible().catch(() => false);
+          const enabled = requireEnabled
+            ? await item.isEnabled().catch(() => false)
+            : true;
+          if (visible && enabled) return item;
         }
       } catch (error) {
         lastError = error;
       }
     }
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw lastError ?? new Error("No usable locator found");
+  const details = await browserDiagnostics(page, candidates);
+  const suffix = lastError
+    ? `; last locator error: ${lastError instanceof Error ? lastError.message : String(lastError)}`
+    : "";
+  throw new Error(`${label}: no usable locator after ${timeout}ms; ${details}${suffix}`);
 }
 
 async function chatInput(page) {
-  return firstUsable([
-    page.getByTestId("chat-input"),
-    page.getByLabel("Chat input"),
-    page.getByPlaceholder(/Describe findings or answer the question/i),
-  ]);
+  return firstUsable(
+    page,
+    "chat input",
+    [
+      candidate("data-testid=chat-input", page.getByTestId("chat-input")),
+      candidate("aria-label=Chat input", page.getByLabel("Chat input")),
+      candidate(
+        "placeholder=Describe findings",
+        page.getByPlaceholder(/Describe findings or answer the question/i)
+      ),
+    ],
+    { timeout: STEP_TIMEOUT_MS }
+  );
 }
 
 async function bodyText(page) {
@@ -705,23 +765,44 @@ async function waitForLoadingSettled(page) {
   const loading = page.getByTestId("loading-indicator");
   await loading.waitFor({ state: "attached", timeout: 1_000 }).catch(() => {});
   await loading.waitFor({ state: "detached", timeout: STEP_TIMEOUT_MS }).catch(() => {});
-  await page.waitForTimeout(250);
+  await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+  await page.waitForTimeout(BROWSER_SETTLE_MS);
 }
 
 async function waitForMessageText(page, pattern, timeout = STEP_TIMEOUT_MS) {
-  await page.getByTestId("message-list").getByText(pattern).last().waitFor({
-    state: "visible",
-    timeout,
-  });
+  try {
+    await page.getByTestId("message-list").getByText(pattern).last().waitFor({
+      state: "visible",
+      timeout,
+    });
+  } catch (error) {
+    const text = await bodyText(page).catch(() => "");
+    throw new Error(
+      `message ${pattern} not visible after ${timeout}ms; body=${JSON.stringify(
+        text.slice(-800)
+      )}; ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }
 
 async function clickButton(page, label) {
   const exact = new RegExp(`^${escapeRegExp(label)}$`);
-  const button = await firstUsable([
-    page.getByLabel(`Quick reply: ${label}`),
-    page.getByTestId("quick-reply-button").filter({ hasText: exact }),
-    page.getByRole("button", { name: exact }),
-  ], STEP_TIMEOUT_MS);
+  const button = await firstUsable(
+    page,
+    `button "${label}"`,
+    [
+      candidate(
+        `aria-label=Quick reply: ${label}`,
+        page.getByLabel(`Quick reply: ${label}`)
+      ),
+      candidate(
+        `data-testid=quick-reply-button text=${label}`,
+        page.getByTestId("quick-reply-button").filter({ hasText: exact })
+      ),
+      candidate(`role=button name=${label}`, page.getByRole("button", { name: exact })),
+    ],
+    { timeout: STEP_TIMEOUT_MS }
+  );
   await button.click();
   await waitForLoadingSettled(page);
 }
@@ -736,14 +817,33 @@ async function sendText(page, text) {
 
 async function startPathway(page) {
   await page.goto(PROD_BASE_URL, { waitUntil: "networkidle", timeout: 45_000 });
-  await firstUsable([
-    page.getByTestId("pathway-rail"),
-    page.getByRole("navigation", { name: /hs-TnI pathway progress/i }),
-  ], 15_000);
-  await firstUsable([
-    page.getByTestId("start-pathway-button"),
-    page.getByRole("button", { name: /^Start pathway$/i }),
-  ], STEP_TIMEOUT_MS).then((button) => button.click());
+  await firstUsable(
+    page,
+    "pathway rail",
+    [
+      candidate("data-testid=pathway-rail", page.getByTestId("pathway-rail")),
+      candidate(
+        "navigation=hs-TnI pathway progress",
+        page.getByRole("navigation", { name: /hs-TnI pathway progress/i })
+      ),
+    ],
+    { timeout: 15_000, requireEnabled: false }
+  );
+  await firstUsable(
+    page,
+    "start pathway button",
+    [
+      candidate(
+        "data-testid=start-pathway-button",
+        page.getByTestId("start-pathway-button")
+      ),
+      candidate(
+        "role=button Start pathway",
+        page.getByRole("button", { name: /^Start pathway$/i })
+      ),
+    ],
+    { timeout: STEP_TIMEOUT_MS }
+  ).then((button) => button.click());
   await waitForLoadingSettled(page);
 }
 
@@ -791,6 +891,7 @@ const BROWSER_FLOWS = [
       await clickButton(page, "Male");
       await clickButton(page, "No ESRD");
       await sendText(page, "4 hours");
+      await waitForMessageText(page, /0[- ]?hour HST|0h HST|0-hour HST/i);
       await sendText(page, "3");
       await clickButton(page, "Low");
       await waitForMessageText(page, /LOW|Low-risk discharge|discharge/i);
@@ -831,8 +932,11 @@ const BROWSER_FLOWS = [
       await clickButton(page, "Male");
       await clickButton(page, "No ESRD");
       await sendText(page, "5 hours");
+      await waitForMessageText(page, /0[- ]?hour HST|0h HST|0-hour HST/i);
       await sendText(page, "6");
+      await waitForMessageText(page, /2[- ]?hour HST|2h HST|2-hour HST/i);
       await sendText(page, "10");
+      await waitForMessageText(page, /repeat.*2[- ]?hour EKG|2[- ]?hour.*repeat EKG|ischemic ST/i);
       await clickButton(page, "No ischemic changes");
       await waitForMessageText(page, /4[- ]?hour HST|4h HST/i);
       return screenshot(page, "intermediate-4h");
