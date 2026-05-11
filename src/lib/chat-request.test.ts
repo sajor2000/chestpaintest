@@ -670,4 +670,36 @@ describe("sanitizeClientMessages", () => {
       ]);
     }
   );
+
+  it("uses controller state data as the active question for terse HST replies", () => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-hst0",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-pathway-state",
+            data: {
+              question: "What is the 0-hour HST value in ng/L?",
+            },
+          },
+          {
+            type: "text",
+            text: "The visible UI renders the server-owned question.",
+          },
+        ],
+      },
+      {
+        id: "user-hst0",
+        role: "user",
+        parts: [{ type: "text", text: "5" }],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-hst0",
+      role: "user",
+      parts: [{ type: "text", text: "0-hour HST value: 5 ng/L." }],
+    });
+  });
 });
