@@ -28,8 +28,11 @@ describe("production browser audit harness", () => {
     );
     expect(script).toContain("MD_STRESS_API_LIMIT");
     expect(script).toContain("MD_STRESS_BROWSER_LIMIT");
+    expect(script).toContain("MD_STRESS_BROWSER_SETTLE_MS");
     expect(script).toContain("data-pathway-state");
     expect(script).toContain("output/md-stress");
     expect(script).toContain("complaining MD");
+    expect(script).toContain("enabled buttons");
+    expect(script).toContain("no usable locator after");
   });
 });
