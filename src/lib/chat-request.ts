@@ -244,6 +244,23 @@ function sanitizeUserTextPart(
 }
 
 function sanitizeAssistantQuestionPart(parts: unknown[]): SanitizedTextPart | null {
+  const controllerQuestion = parts
+    .filter(isRecord)
+    .map((part) => {
+      if (part.type !== "data-pathway-state" || !isRecord(part.data)) {
+        return null;
+      }
+      return typeof part.data.question === "string" ? part.data.question : null;
+    })
+    .filter((question): question is string => Boolean(question?.trim()))
+    .pop();
+  if (controllerQuestion) {
+    return {
+      type: "text",
+      text: controllerQuestion.slice(0, MAX_MESSAGE_LENGTH),
+    };
+  }
+
   const assistantText = parts
     .filter(isRecord)
     .filter((part) => part.type === "text" && typeof part.text === "string")

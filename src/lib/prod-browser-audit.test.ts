@@ -35,4 +35,25 @@ describe("production browser audit harness", () => {
     expect(script).toContain("enabled buttons");
     expect(script).toContain("no usable locator after");
   });
+
+  it("exposes a report-first clinician LLM judge harness", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const script = readFileSync("scripts/audit-clinician-judge.mjs", "utf8");
+
+    expect(packageJson.scripts?.["audit:clinician-judge"]).toBe(
+      "node scripts/audit-clinician-judge.mjs"
+    );
+    expect(script).toContain("output/clinician-judge");
+    expect(script).toContain("CLINICIAN_JUDGE");
+    expect(script).toContain("CLINICIAN_BROWSER_LIMIT");
+    expect(script).toContain("PROD_BASE_URL");
+    expect(script).toContain("evaluateApiFaithfulness");
+    expect(script).toContain("evaluateBrowserFaithfulness");
+    expect(script).toContain("pathway faithfulness");
+    expect(script).toContain(
+      "Do not decide whether the Rush protocol is clinically correct"
+    );
+  });
 });

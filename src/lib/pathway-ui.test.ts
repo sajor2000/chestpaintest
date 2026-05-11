@@ -3,11 +3,13 @@ import {
   cleanQuickReplyPromptText,
   cleanRepeatedQuestionText,
   getControllerPathwayStep,
+  getControllerQuestionText,
   getControllerQuickReplyOptions,
   getStepGuidance,
   getPathwayStep,
   isDuplicateQuickReplyPromptText,
   normalizeQuickReplyOptions,
+  shouldSuppressAssistantTextForControllerState,
 } from "./pathway-ui";
 import type { PathwayControllerSnapshot } from "./pathway-controller";
 
@@ -297,6 +299,30 @@ describe("controller-owned UI state", () => {
         ["Yes - ESRD", "No ESRD"]
       )
     ).toEqual([]);
+  });
+
+  it("suppresses stale model quick replies when the controller requires free text", () => {
+    expect(
+      getControllerQuickReplyOptions(
+        { ...controllerSnapshot, requiredField: "hst2", allowedOptions: [] },
+        ["Yes - ongoing pain", "No ongoing pain"]
+      )
+    ).toEqual([]);
+  });
+
+  it("renders the server-selected question instead of contradictory model text", () => {
+    const hstSnapshot = {
+      ...controllerSnapshot,
+      step: "delta",
+      requiredField: "hst2",
+      question: "What is the 2-hour HST value in ng/L?",
+      allowedOptions: [],
+    } as PathwayControllerSnapshot;
+
+    expect(shouldSuppressAssistantTextForControllerState(hstSnapshot)).toBe(true);
+    expect(getControllerQuestionText(hstSnapshot)).toBe(
+      "What is the 2-hour HST value in ng/L?"
+    );
   });
 });
 
