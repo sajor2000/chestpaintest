@@ -18,7 +18,11 @@ import {
   shouldSuppressAssistantTextForControllerState,
   type PathwayStepId,
 } from "@/lib/pathway-ui";
-import type { PathwayControllerSnapshot } from "@/lib/pathway-controller";
+import type {
+  PathwayControllerResult,
+  PathwayControllerSnapshot,
+} from "@/lib/pathway-controller";
+import { getDeltaEquation } from "@/lib/delta-display";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_IMAGE_BYTES = 1024 * 1024; // 1 MB
@@ -41,6 +45,14 @@ function str(v: unknown): string | undefined {
 
 function num(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined;
+}
+
+function resultSignature(result: PathwayControllerResult) {
+  return JSON.stringify({
+    kind: result.kind,
+    hour: result.hour,
+    data: result.data,
+  });
 }
 
 function RiskCard({ data }: { data: Record<string, unknown> }) {
@@ -198,13 +210,18 @@ function getMessageText(msg: ChatMessage): string {
 
 function ControllerResultCards({
   snapshot,
+  previousSnapshot,
 }: {
   snapshot: PathwayControllerSnapshot;
+  previousSnapshot?: PathwayControllerSnapshot | null;
 }) {
+  const previousResultSignatures = new Set(
+    previousSnapshot?.results.map(resultSignature) ?? []
+  );
   const displayResults = snapshot.results.filter((result) =>
     ["assess_ekg", "calculate_delta", "calculate_heart_score", "determine_disposition"].includes(
       result.kind
-    )
+    ) && !previousResultSignatures.has(resultSignature(result))
   );
   if (displayResults.length === 0) return null;
 
@@ -219,17 +236,11 @@ function ControllerResultCards({
         }
         if (result.kind === "calculate_delta") {
           return (
-            <div
+            <DeltaCard
               key={`${result.kind}-${index}`}
-              className="rounded-lg border border-[#006332]/15 bg-[#f9fbfa] p-3 text-xs text-[#353535]"
-            >
-              <div className="font-bold text-[#006332]">
-                {result.hour}-hour delta
-              </div>
-              <div className="mt-1">
-                {str(result.data.math_summary)} {str(result.data.message)}
-              </div>
-            </div>
+              data={result.data}
+              hour={result.hour}
+            />
           );
         }
         if (result.kind === "calculate_heart_score") {
@@ -486,12 +497,20 @@ function HeartScoreCard({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-function DeltaCard({ data }: { data: Record<string, unknown> }) {
+function DeltaCard({
+  data,
+  hour,
+}: {
+  data: Record<string, unknown>;
+  hour?: "0" | "2" | "4";
+}) {
   const category = str(data.delta_category) ?? "minimal";
   const mathSummary = str(data.math_summary);
+  const equation = getDeltaEquation(data);
   const logicSummary = str(data.logic_summary);
   const method = str(data.method);
   const direction = str(data.direction);
+  const message = str(data.message);
   const recommendations = isStringArray(data.recommendations)
     ? data.recommendations
     : [];
@@ -524,62 +543,116 @@ function DeltaCard({ data }: { data: Record<string, unknown> }) {
         };
 
   return (
-    <div className={`my-2 rounded-lg border-l-4 p-3 ${tone.bg} ${tone.border}`}>
+    <div className={`my-2 overflow-hidden rounded-lg border ${tone.bg} ${tone.border}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
+        <div className="px-3 pt-3">
           <div className={`text-sm font-bold uppercase tracking-wide ${tone.text}`}>
+            {hour ? `${hour}-hour HST delta` : "HST delta"}
+          </div>
+          <div className="mt-0.5 text-xs font-semibold text-[#353535]">
             {tone.title}
           </div>
-          {mathSummary && (
-            <div className="mt-1 font-mono text-xs text-[#353535]">
-              {mathSummary}
-            </div>
-          )}
         </div>
         {absoluteDelta !== undefined && (
-          <div className={`rounded-full border px-2.5 py-1 text-xs font-bold ${tone.chip}`}>
+          <div className={`mr-3 mt-3 rounded-full border px-2.5 py-1 text-xs font-bold ${tone.chip}`}>
             Delta {absoluteDelta} ng/L
           </div>
         )}
       </div>
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        {method && (
-          <div className="rounded-md border border-black/5 bg-white px-3 py-2">
-            <div className="text-[11px] font-bold uppercase tracking-wide text-[#494949]">
-              Math rule
-            </div>
-            <div className="mt-1 text-xs text-[#353535]">{method}</div>
+      {equation ? (
+        <div className="mx-3 mt-3 rounded-md border border-black/5 bg-white shadow-sm">
+          <div className="border-b border-gray-100 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-[#494949]">
+            Formula: current HST - 0h HST = change
           </div>
-        )}
-        {logicSummary && (
-          <div className="rounded-md border border-black/5 bg-white px-3 py-2">
-            <div className="text-[11px] font-bold uppercase tracking-wide text-[#494949]">
-              Pathway logic
-            </div>
-            <div className="mt-1 text-xs text-[#353535]">{logicSummary}</div>
-            {direction && (
-              <div className="mt-1 text-[11px] text-[#494949]">
-                Direction: {direction}
+          <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch text-center">
+            <div className="px-2 py-2.5">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-[#6b6b6b]">
+                {hour ? `${hour}h HST` : "Current HST"}
               </div>
-            )}
+              <div className="mt-0.5 font-mono text-xl font-bold leading-none text-[#222]">
+                {equation.current}
+              </div>
+              <div className="mt-0.5 text-[10px] text-[#6b6b6b]">ng/L</div>
+            </div>
+            <div className="flex items-center border-x border-gray-100 px-2 font-mono text-lg font-bold text-[#6b6b6b]">
+              -
+            </div>
+            <div className="px-2 py-2.5">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-[#6b6b6b]">
+                0h HST
+              </div>
+              <div className="mt-0.5 font-mono text-xl font-bold leading-none text-[#222]">
+                {equation.baseline}
+              </div>
+              <div className="mt-0.5 text-[10px] text-[#6b6b6b]">ng/L</div>
+            </div>
+            <div className="flex items-center border-x border-gray-100 px-2 font-mono text-lg font-bold text-[#6b6b6b]">
+              =
+            </div>
+            <div className="px-2 py-2.5">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-[#6b6b6b]">
+                Change
+              </div>
+              <div className={`mt-0.5 font-mono text-xl font-bold leading-none ${tone.text}`}>
+                {equation.change}
+              </div>
+              <div className="mt-0.5 text-[10px] text-[#6b6b6b]">ng/L</div>
+            </div>
+          </div>
+          <div className="border-t border-gray-100 px-3 py-1.5 font-mono text-xs font-bold text-[#353535]">
+            {equation.expression}
+          </div>
+        </div>
+      ) : mathSummary ? (
+        <div className="mx-3 mt-3 rounded-md border border-black/5 bg-white px-3 py-2 font-mono text-sm font-bold text-[#222]">
+          {mathSummary}
+        </div>
+      ) : null}
+      {message && (
+        <div className="mx-3 mt-2 rounded-md border border-black/5 bg-white px-3 py-2 text-xs leading-snug text-[#353535]">
+          {message}
+        </div>
+      )}
+      <div className="px-3 pb-3">
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {method && (
+            <div className="rounded-md border border-black/5 bg-white px-3 py-2">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-[#494949]">
+                Math rule
+              </div>
+              <div className="mt-1 text-xs text-[#353535]">{method}</div>
+            </div>
+          )}
+          {logicSummary && (
+            <div className="rounded-md border border-black/5 bg-white px-3 py-2">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-[#494949]">
+                Pathway logic
+              </div>
+              <div className="mt-1 text-xs text-[#353535]">{logicSummary}</div>
+              {direction && (
+                <div className="mt-1 text-[11px] text-[#494949]">
+                  Direction: {direction}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        {recommendations.length > 0 && (
+          <ul className="mt-2 space-y-1.5 text-xs text-[#353535]">
+            {recommendations.map((item) => (
+              <li key={item} className="flex gap-2">
+                <span className={`font-bold ${tone.text}`}>Flag</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {footnote && (
+          <div className="mt-2 border-t border-black/5 pt-1.5 text-xs italic text-[#494949]">
+            {footnote}
           </div>
         )}
       </div>
-      {recommendations.length > 0 && (
-        <ul className="mt-2 space-y-1.5 text-xs text-[#353535]">
-          {recommendations.map((item) => (
-            <li key={item} className="flex gap-2">
-              <span className={`font-bold ${tone.text}`}>Flag</span>
-              <span>{item}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {footnote && (
-        <div className="mt-2 border-t border-black/5 pt-1.5 text-xs italic text-[#494949]">
-          {footnote}
-        </div>
-      )}
     </div>
   );
 }
@@ -771,8 +844,11 @@ export default function Chat() {
             </div>
           </div>
         )}
-        {messages.map((msg) => {
+        {messages.map((msg, messageIndex) => {
           const messageControllerState = getMessageControllerState(msg);
+          const previousControllerState = getLatestControllerState(
+            messages.slice(0, messageIndex)
+          );
           return (
             <div
               key={msg.id}
@@ -964,7 +1040,10 @@ export default function Chat() {
                   const isLast = msg.id === messages[messages.length - 1]?.id;
                   return (
                     <div key={`${msg.id}-${i}`}>
-                      <ControllerResultCards snapshot={part.data} />
+                      <ControllerResultCards
+                        snapshot={part.data}
+                        previousSnapshot={previousControllerState}
+                      />
                       <ControllerQuestionBlock
                         snapshot={part.data}
                         isLast={isLast}
