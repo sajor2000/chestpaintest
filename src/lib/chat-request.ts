@@ -31,6 +31,37 @@ function normalizeYesNo(value: string) {
   return null;
 }
 
+const NUMBER_WORDS: Record<string, number> = {
+  zero: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+};
+
+function parseSymptomDurationHours(value: string) {
+  const trimmed = value.trim().toLowerCase();
+  const numeric = trimmed.match(/^(\d+(?:\.\d+)?)(?:\s*(?:h|hr|hrs|hour|hours))?(?:\s+ago)?$/);
+  if (numeric) return numeric[1];
+  return NUMBER_WORDS[trimmed]?.toString() ?? null;
+}
+
 function normalizeTextForPathwayContext(
   text: string,
   activeQuestion?: string | null
@@ -152,10 +183,12 @@ function normalizeTextForPathwayContext(
       (question.includes("hours") && question.includes("present"))) &&
     (question.includes("symptom") ||
       question.includes("symptoms") ||
-      question.includes("chest pain")) &&
-    /^\d+(?:\.\d+)?\s*(?:h|hr|hrs|hour|hours)$/i.test(text.trim())
+      question.includes("chest pain"))
   ) {
-    return `Symptom duration: ${text.trim()}. This is not an HST/troponin value.`;
+    const durationHours = parseSymptomDurationHours(text);
+    if (durationHours !== null) {
+      return `Symptom duration: ${durationHours} hours. This is not an HST/troponin value.`;
+    }
   }
 
   if (

@@ -702,4 +702,42 @@ describe("sanitizeClientMessages", () => {
       parts: [{ type: "text", text: "0-hour HST value: 5 ng/L." }],
     });
   });
+
+  it.each([
+    ["4", "Symptom duration: 4 hours. This is not an HST/troponin value."],
+    ["four", "Symptom duration: 4 hours. This is not an HST/troponin value."],
+  ])(
+    "uses controller state data as the active question for terse symptom duration reply %s",
+    (reply, normalized) => {
+      const messages = sanitizeClientMessages([
+        {
+          id: "assistant-duration",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-pathway-state",
+              data: {
+                question: "How many hours have the symptoms been present?",
+              },
+            },
+            {
+              type: "text",
+              text: "The visible UI renders the server-owned question.",
+            },
+          ],
+        },
+        {
+          id: "user-duration",
+          role: "user",
+          parts: [{ type: "text", text: reply }],
+        },
+      ]);
+
+      expect(messages.at(-1)).toEqual({
+        id: "user-duration",
+        role: "user",
+        parts: [{ type: "text", text: normalized }],
+      });
+    }
+  );
 });
