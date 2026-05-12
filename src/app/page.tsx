@@ -7,6 +7,7 @@ import type { FileUIPart } from "ai";
 import {
   cleanQuickReplyPromptText,
   cleanRepeatedQuestionText,
+  getControllerInputHelpText,
   getControllerPathwayStep,
   getControllerQuestionText,
   getControllerQuickReplyOptions,
@@ -261,6 +262,7 @@ function ControllerQuestionBlock({
 }) {
   const question = getControllerQuestionText(snapshot);
   if (!question) return null;
+  const helpText = getControllerInputHelpText(snapshot);
 
   return (
     <div className="mt-2 rounded-lg border border-[#006332]/15 bg-[#f9fbfa] p-3 text-sm text-[#353535]">
@@ -268,6 +270,11 @@ function ControllerQuestionBlock({
         Required pathway input
       </div>
       <div className="mt-1 font-medium">{question}</div>
+      {helpText && (
+        <div className="mt-1 text-xs leading-snug text-[#606060]">
+          {helpText}
+        </div>
+      )}
       {snapshot.allowedOptions.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
           {snapshot.allowedOptions.map((opt) => (

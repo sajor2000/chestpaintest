@@ -3,6 +3,7 @@ import {
   cleanQuickReplyPromptText,
   cleanRepeatedQuestionText,
   getControllerPathwayStep,
+  getControllerInputHelpText,
   getControllerQuestionText,
   getControllerQuickReplyOptions,
   getStepGuidance,
@@ -323,6 +324,26 @@ describe("controller-owned UI state", () => {
     expect(getControllerQuestionText(hstSnapshot)).toBe(
       "What is the 2-hour HST value in ng/L?"
     );
+  });
+
+  it("shows free-text help for numeric controller questions", () => {
+    expect(
+      getControllerInputHelpText({
+        ...controllerSnapshot,
+        requiredField: "symptomDurationHours",
+        question: "How many hours have the symptoms been present?",
+        allowedOptions: [],
+      } as PathwayControllerSnapshot)
+    ).toContain("4");
+
+    expect(
+      getControllerInputHelpText({
+        ...controllerSnapshot,
+        requiredField: "hst0",
+        question: "What is the 0-hour HST value in ng/L?",
+        allowedOptions: [],
+      } as PathwayControllerSnapshot)
+    ).toContain("ng/L");
   });
 });
 

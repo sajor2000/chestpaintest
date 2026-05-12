@@ -240,6 +240,8 @@ const CASES = [
       ...noStemiSteps,
       click("Male"),
       click("No ESRD"),
+      type("what are my options"),
+      wait(/symptoms.*present|duration|hours/i),
       type("4"),
       wait(/0[- ]?hour HST|0h HST|0-hour HST/i),
       type("3"),
