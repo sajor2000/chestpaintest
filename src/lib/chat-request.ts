@@ -31,6 +31,57 @@ function normalizeYesNo(value: string) {
   return null;
 }
 
+const NUMBER_WORDS: Record<string, number> = {
+  zero: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+};
+
+const TENS_WORDS: Record<string, number> = {
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
+};
+
+function parseNumberLike(value: string) {
+  const trimmed = value.trim().toLowerCase();
+  const numeric = trimmed.match(/^(\d+(?:\.\d+)?)(?:\s*(?:h|hr|hrs|hour|hours))?(?:\s+ago)?$/);
+  if (numeric) return numeric[1];
+  if (NUMBER_WORDS[trimmed] !== undefined) {
+    return NUMBER_WORDS[trimmed].toString();
+  }
+
+  const phrase = trimmed.replace(/-/g, " ");
+  const parts = phrase.split(/\s+/);
+  if (parts.length === 2 && TENS_WORDS[parts[0]] && NUMBER_WORDS[parts[1]]) {
+    return (TENS_WORDS[parts[0]] + NUMBER_WORDS[parts[1]]).toString();
+  }
+  if (TENS_WORDS[phrase]) return TENS_WORDS[phrase].toString();
+  return null;
+}
+
 function normalizeTextForPathwayContext(
   text: string,
   activeQuestion?: string | null
@@ -43,12 +94,17 @@ function normalizeTextForPathwayContext(
     )
       ? ` ${text.trim()}`
       : "";
-  if (trimmed === "male" || trimmed === "female") {
-    return `Patient sex: ${trimmed}.`;
-  }
-
   const question = activeQuestion?.toLowerCase() ?? "";
   const yesNo = normalizeYesNo(text);
+
+  if (
+    trimmed === "male" ||
+    trimmed === "female" ||
+    (question.includes("sex") && (trimmed === "m" || trimmed === "f"))
+  ) {
+    const sex = trimmed === "m" ? "male" : trimmed === "f" ? "female" : trimmed;
+    return `Patient sex: ${sex}.`;
+  }
 
   if (question.includes("stemi")) {
     if (yesNo) return yesNo === "yes" ? "Yes - STEMI." : "No STEMI.";
@@ -69,8 +125,9 @@ function normalizeTextForPathwayContext(
   }
 
   if (question.includes("clinical suspicion")) {
-    if (["low", "moderate", "high"].includes(trimmed)) {
-      return `Clinical suspicion for ACS: ${trimmed}.`;
+    const suspicion = trimmed.match(/\b(low|moderate|high)\b/)?.[1];
+    if (suspicion) {
+      return `Clinical suspicion for ACS: ${suspicion}.`;
     }
   }
 
@@ -90,7 +147,12 @@ function normalizeTextForPathwayContext(
     }
   }
 
-  const heartScore = text.trim().match(/^([012])(?:\s*[-–—].*)?$/)?.[1];
+  const parsedHeartNumber = parseNumberLike(text);
+  const heartScore =
+    text.trim().match(/^([012])(?:\s*[-–—].*)?$/)?.[1] ??
+    (parsedHeartNumber && /^[012]$/.test(parsedHeartNumber)
+      ? parsedHeartNumber
+      : undefined);
   if (heartScore) {
     const heartComponent =
       question.includes("history") && question.includes("acs")
@@ -152,25 +214,28 @@ function normalizeTextForPathwayContext(
       (question.includes("hours") && question.includes("present"))) &&
     (question.includes("symptom") ||
       question.includes("symptoms") ||
-      question.includes("chest pain")) &&
-    /^\d+(?:\.\d+)?\s*(?:h|hr|hrs|hour|hours)$/i.test(text.trim())
+      question.includes("chest pain"))
   ) {
-    return `Symptom duration: ${text.trim()}. This is not an HST/troponin value.`;
+    const durationHours = parseNumberLike(text);
+    if (durationHours !== null) {
+      return `Symptom duration: ${durationHours} hours. This is not an HST/troponin value.`;
+    }
   }
 
   if (
     (question.includes("hst") ||
       question.includes("hs-tni") ||
-      question.includes("troponin")) &&
-    /^(?:\d+(?:\.\d+)?(?:\s*ng\/?l)?|\d+(?:\.\d+)?\s*ng\/?l\s*(?:hst|hs-?tni|troponin|trop)|(?:hst|hs-?tni|troponin|trop)\s*(?:is|=)?\s*\d+(?:\.\d+)?(?:\s*ng\/?l)?)$/i.test(
-      text.trim()
-    )
+      question.includes("troponin"))
   ) {
+    const parsedNumber = parseNumberLike(text);
+    const hstPattern =
+      /^(?:\d+(?:\.\d+)?(?:\s*ng\/?l)?|\d+(?:\.\d+)?\s*ng\/?l\s*(?:hst|hs-?tni|troponin|trop)|(?:hst|hs-?tni|troponin|trop)\s*(?:is|=)?\s*\d+(?:\.\d+)?(?:\s*ng\/?l)?)$/i;
+    if (!parsedNumber && !hstPattern.test(text.trim())) return text;
     const timepoint =
       question.match(/\b(0|2|4)[-\s]?(?:hour|hr)\b/)?.[1] ??
       question.match(/\b(0|2|4)h\b/)?.[1];
     const label = timepoint ? `${timepoint}-hour HST value` : "HST value";
-    const value = text.trim().match(/\d+(?:\.\d+)?/)?.[0] ?? text.trim();
+    const value = parsedNumber ?? text.trim().match(/\d+(?:\.\d+)?/)?.[0] ?? text.trim();
     return `${label}: ${value} ng/L.`;
   }
 

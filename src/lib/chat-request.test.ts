@@ -702,4 +702,82 @@ describe("sanitizeClientMessages", () => {
       parts: [{ type: "text", text: "0-hour HST value: 5 ng/L." }],
     });
   });
+
+  it.each([
+    ["4", "Symptom duration: 4 hours. This is not an HST/troponin value."],
+    ["four", "Symptom duration: 4 hours. This is not an HST/troponin value."],
+  ])(
+    "uses controller state data as the active question for terse symptom duration reply %s",
+    (reply, normalized) => {
+      const messages = sanitizeClientMessages([
+        {
+          id: "assistant-duration",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-pathway-state",
+              data: {
+                question: "How many hours have the symptoms been present?",
+              },
+            },
+            {
+              type: "text",
+              text: "The visible UI renders the server-owned question.",
+            },
+          ],
+        },
+        {
+          id: "user-duration",
+          role: "user",
+          parts: [{ type: "text", text: reply }],
+        },
+      ]);
+
+      expect(messages.at(-1)).toEqual({
+        id: "user-duration",
+        role: "user",
+        parts: [{ type: "text", text: normalized }],
+      });
+    }
+  );
+
+  it.each([
+    ["Patient sex?", "M", "Patient sex: male."],
+    ["Patient sex?", "f", "Patient sex: female."],
+    ["Clinical suspicion for ACS?", "low suspicion", "Clinical suspicion for ACS: low."],
+    ["What is the 0-hour HST value in ng/L?", "six", "0-hour HST value: 6 ng/L."],
+    ["What is the 2-hour HST value in ng/L?", "thirty five", "2-hour HST value: 35 ng/L."],
+    ["How suspicious is the history for ACS?", "one", "HEART components: history 1."],
+    ["EKG score for HEART?", "zero", "HEART components: EKG 0."],
+    ["Patient age category for HEART?", "two", "HEART components: age 2."],
+    ["Risk factor burden for HEART?", "one", "HEART components: risk factors 1."],
+    ["Troponin component for HEART?", "zero", "HEART components: troponin 0."],
+  ])(
+    "normalizes terse active-question reply %s / %s",
+    (question, reply, normalized) => {
+      const messages = sanitizeClientMessages([
+        {
+          id: "assistant-controller",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-pathway-state",
+              data: { question },
+            },
+          ],
+        },
+        {
+          id: "user-reply",
+          role: "user",
+          parts: [{ type: "text", text: reply }],
+        },
+      ]);
+
+      expect(messages.at(-1)).toEqual({
+        id: "user-reply",
+        role: "user",
+        parts: [{ type: "text", text: normalized }],
+      });
+    }
+  );
 });
