@@ -51,6 +51,23 @@ describe("getDeltaEquation", () => {
     });
   });
 
+  it("keeps the displayed equation mathematically correct if payload delta fields disagree", () => {
+    expect(
+      getDeltaEquation({
+        hst_0hr: 2,
+        hst_current: 6,
+        signed_delta: 5,
+        absolute_delta: 5,
+      })
+    ).toEqual({
+      current: "6",
+      baseline: "2",
+      change: "+4",
+      expression: "6 - 2 = +4 ng/L",
+      absolute: "4",
+    });
+  });
+
   it("returns null when the tool payload has no numeric HST pair", () => {
     expect(getDeltaEquation({ math_summary: "6 - 2 = +4 ng/L" })).toBeNull();
   });

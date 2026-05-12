@@ -745,8 +745,12 @@ describe("sanitizeClientMessages", () => {
     ["Patient sex?", "M", "Patient sex: male."],
     ["Patient sex?", "f", "Patient sex: female."],
     ["Clinical suspicion for ACS?", "low suspicion", "Clinical suspicion for ACS: low."],
+    ["Clinical suspicion for ACS?", "clinical suspicion: high", "Clinical suspicion for ACS: high."],
     ["What is the 0-hour HST value in ng/L?", "six", "0-hour HST value: 6 ng/L."],
+    ["What is the 0-hour HST value in ng/L?", "twenty one", "0-hour HST value: 21 ng/L."],
+    ["What is the 0-hour HST value in ng/L?", "twenty-five", "0-hour HST value: 25 ng/L."],
     ["What is the 2-hour HST value in ng/L?", "thirty five", "2-hour HST value: 35 ng/L."],
+    ["What is the 2-hour HST value in ng/L?", "thirty zero", "2-hour HST value: 30 ng/L."],
     ["How suspicious is the history for ACS?", "one", "HEART components: history 1."],
     ["EKG score for HEART?", "zero", "HEART components: EKG 0."],
     ["Patient age category for HEART?", "two", "HEART components: age 2."],
@@ -780,4 +784,34 @@ describe("sanitizeClientMessages", () => {
       });
     }
   );
+
+  it.each([
+    "not low, moderate",
+    "low to moderate",
+    "low or high",
+  ])("leaves ambiguous clinical suspicion reply unchanged: %s", (reply) => {
+    const messages = sanitizeClientMessages([
+      {
+        id: "assistant-controller",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-pathway-state",
+            data: { question: "Clinical suspicion for ACS?" },
+          },
+        ],
+      },
+      {
+        id: "user-reply",
+        role: "user",
+        parts: [{ type: "text", text: reply }],
+      },
+    ]);
+
+    expect(messages.at(-1)).toEqual({
+      id: "user-reply",
+      role: "user",
+      parts: [{ type: "text", text: reply }],
+    });
+  });
 });

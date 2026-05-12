@@ -56,6 +56,7 @@ const NUMBER_WORDS: Record<string, number> = {
 };
 
 const TENS_WORDS: Record<string, number> = {
+  twenty: 20,
   thirty: 30,
   forty: 40,
   fifty: 50,
@@ -75,7 +76,12 @@ function parseNumberLike(value: string) {
 
   const phrase = trimmed.replace(/-/g, " ");
   const parts = phrase.split(/\s+/);
-  if (parts.length === 2 && TENS_WORDS[parts[0]] && NUMBER_WORDS[parts[1]]) {
+  if (
+    parts.length === 2 &&
+    TENS_WORDS[parts[0]] !== undefined &&
+    NUMBER_WORDS[parts[1]] !== undefined &&
+    NUMBER_WORDS[parts[1]] <= 9
+  ) {
     return (TENS_WORDS[parts[0]] + NUMBER_WORDS[parts[1]]).toString();
   }
   if (TENS_WORDS[phrase]) return TENS_WORDS[phrase].toString();
@@ -125,7 +131,10 @@ function normalizeTextForPathwayContext(
   }
 
   if (question.includes("clinical suspicion")) {
-    const suspicion = trimmed.match(/\b(low|moderate|high)\b/)?.[1];
+    const suspicion =
+      trimmed.match(/^(low|moderate|high)(?:\s+(?:suspicion|acs suspicion|clinical suspicion))?$/)?.[1] ??
+      trimmed.match(/^(?:clinical\s+)?suspicion(?:\s+for\s+acs)?\s*[:=-]?\s*(low|moderate|high)$/)?.[1] ??
+      trimmed.match(/^acs\s+suspicion\s*[:=-]?\s*(low|moderate|high)$/)?.[1];
     if (suspicion) {
       return `Clinical suspicion for ACS: ${suspicion}.`;
     }

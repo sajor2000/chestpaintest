@@ -43,10 +43,6 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
-function num(v: unknown): number | undefined {
-  return typeof v === "number" ? v : undefined;
-}
-
 function resultSignature(result: PathwayControllerResult) {
   return JSON.stringify({
     kind: result.kind,
@@ -245,13 +241,10 @@ function ControllerResultCards({
         }
         if (result.kind === "calculate_heart_score") {
           return (
-            <div
+            <HeartScoreCard
               key={`${result.kind}-${index}`}
-              className="rounded-lg border border-[#c8902e]/25 bg-[#fffaf0] p-3 text-xs text-[#353535]"
-            >
-              <div className="font-bold text-[#7a4a00]">HEART score</div>
-              <div className="mt-1">{str(result.data.message)}</div>
-            </div>
+              data={result.data}
+            />
           );
         }
         return null;
@@ -515,7 +508,6 @@ function DeltaCard({
     ? data.recommendations
     : [];
   const footnote = str(data.footnote);
-  const absoluteDelta = num(data.absolute_delta);
   const isSignificant = category === "significant";
   const isIntermediate = category === "intermediate";
   const tone = isSignificant
@@ -553,9 +545,9 @@ function DeltaCard({
             {tone.title}
           </div>
         </div>
-        {absoluteDelta !== undefined && (
+        {equation?.absolute && (
           <div className={`mr-3 mt-3 rounded-full border px-2.5 py-1 text-xs font-bold ${tone.chip}`}>
-            Delta {absoluteDelta} ng/L
+            Delta {equation.absolute} ng/L
           </div>
         )}
       </div>

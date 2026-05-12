@@ -28,9 +28,8 @@ export function getDeltaEquation(
   const baseline = numberValue(data.hst_0hr);
   if (current === null || baseline === null) return null;
 
-  const computedSignedDelta = current - baseline;
-  const signedDelta = numberValue(data.signed_delta) ?? computedSignedDelta;
-  const absoluteDelta = numberValue(data.absolute_delta) ?? Math.abs(signedDelta);
+  const signedDelta = current - baseline;
+  const absoluteDelta = Math.abs(signedDelta);
 
   return {
     current: formatNumber(current),
