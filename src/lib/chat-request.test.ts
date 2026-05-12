@@ -740,4 +740,44 @@ describe("sanitizeClientMessages", () => {
       });
     }
   );
+
+  it.each([
+    ["Patient sex?", "M", "Patient sex: male."],
+    ["Patient sex?", "f", "Patient sex: female."],
+    ["Clinical suspicion for ACS?", "low suspicion", "Clinical suspicion for ACS: low."],
+    ["What is the 0-hour HST value in ng/L?", "six", "0-hour HST value: 6 ng/L."],
+    ["What is the 2-hour HST value in ng/L?", "thirty five", "2-hour HST value: 35 ng/L."],
+    ["How suspicious is the history for ACS?", "one", "HEART components: history 1."],
+    ["EKG score for HEART?", "zero", "HEART components: EKG 0."],
+    ["Patient age category for HEART?", "two", "HEART components: age 2."],
+    ["Risk factor burden for HEART?", "one", "HEART components: risk factors 1."],
+    ["Troponin component for HEART?", "zero", "HEART components: troponin 0."],
+  ])(
+    "normalizes terse active-question reply %s / %s",
+    (question, reply, normalized) => {
+      const messages = sanitizeClientMessages([
+        {
+          id: "assistant-controller",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-pathway-state",
+              data: { question },
+            },
+          ],
+        },
+        {
+          id: "user-reply",
+          role: "user",
+          parts: [{ type: "text", text: reply }],
+        },
+      ]);
+
+      expect(messages.at(-1)).toEqual({
+        id: "user-reply",
+        role: "user",
+        parts: [{ type: "text", text: normalized }],
+      });
+    }
+  );
 });
