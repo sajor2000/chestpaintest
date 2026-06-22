@@ -304,11 +304,64 @@ export function getControllerQuickReplyOptions(
   fallbackOptions: string[]
 ) {
   if (controllerState?.terminal) return [];
-  if (
-    Array.isArray(controllerState?.allowedOptions) &&
-    controllerState.allowedOptions.length > 0
-  ) {
+  if (Array.isArray(controllerState?.allowedOptions)) {
     return controllerState.allowedOptions;
   }
   return fallbackOptions;
+}
+
+export function shouldSuppressAssistantTextForControllerState(
+  controllerState:
+    | {
+        requiredField?: string | null;
+        terminal?: boolean;
+      }
+    | null
+    | undefined
+) {
+  return Boolean(controllerState && (controllerState.terminal || controllerState.requiredField));
+}
+
+export function getControllerQuestionText(
+  controllerState:
+    | {
+        question?: string | null;
+        terminal?: boolean;
+      }
+    | null
+    | undefined
+) {
+  if (!controllerState || controllerState.terminal) return null;
+  return controllerState.question?.trim() || null;
+}
+
+export function getControllerInputHelpText(
+  controllerState:
+    | {
+        requiredField?: string | null;
+        allowedOptions?: string[];
+        terminal?: boolean;
+      }
+    | null
+    | undefined
+) {
+  if (
+    !controllerState ||
+    controllerState.terminal ||
+    (controllerState.allowedOptions?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+
+  if (controllerState.requiredField === "symptomDurationHours") {
+    return "Type the symptom duration in hours, for example 4, four, or 4 hours.";
+  }
+  if (
+    controllerState.requiredField === "hst0" ||
+    controllerState.requiredField === "hst2" ||
+    controllerState.requiredField === "hst4"
+  ) {
+    return "Type the numeric HST value in ng/L, for example 6.";
+  }
+  return null;
 }

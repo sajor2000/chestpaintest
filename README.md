@@ -13,7 +13,7 @@ The chatbot walks the physician through the pathway step by step:
 5. **HEART Score** — LLM-guided 5-component scoring with visual breakdown card
 6. **Disposition** — Low (discharge) / Intermediate (observation) / Chronic Injury / High (admit) / Pending (4hr or repeat HST required)
 
-**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic server-owned tool functions. The current suite has 249 tests, including 87 pathway tool tests, a 30-case original decision-tree audit, 30 matching controller cases, and a 6-case June 2026 prototype regression suite that exercises the major Rush hs-TnI branches end to end.
+**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic server-owned tool functions. The current suite has 274 tests, including 87 pathway tool tests, a 30-case original decision-tree audit, 30 matching controller cases, clinician-audit harness checks, and a 6-case June 2026 prototype regression suite that exercises the major Rush hs-TnI branches end to end.
 
 ## Features
 
@@ -38,7 +38,7 @@ The chatbot walks the physician through the pathway step by step:
 | AI SDK | Vercel AI SDK v6 (`@ai-sdk/azure`, `@ai-sdk/react`) |
 | LLM | Azure OpenAI GPT-4.1-mini (Chat Completions API) |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest (249 tests; 87 pathway tool tests; 30-case tool audit; 30-case controller audit; 6-case prototype regression suite) plus a live production browser audit harness |
+| Testing | Vitest (274 tests; 87 pathway tool tests; 30-case tool audit; 30-case controller audit; 6-case prototype regression suite) plus live production browser, clinician-judge, and MD stress audit harnesses |
 | FHIR | SMART on FHIR scaffold; add `fhirclient` during Phase 2 Epic integration |
 
 ## Setup
@@ -86,7 +86,7 @@ Use `.env.example` as the template. Do not commit `.env.local`.
 npx vitest run
 ```
 
-249 tests cover the pathway logic, 30-case original decision-tree audit, 30-case deterministic controller audit, June 2026 prototype regressions, request sanitization, route guard, prompt-backed parser guardrails, server-side assistant stream cleanup, system-prompt safety framing, pathway UI workflow, and the production browser audit command contract. The pathway tests verify the Rush hs-TnI pathway PDF branches and boundary values:
+274 tests cover the pathway logic, 30-case original decision-tree audit, 30-case deterministic controller audit, June 2026 prototype regressions, request sanitization, route guard, prompt-backed parser guardrails, server-side assistant stream cleanup, system-prompt safety framing, pathway UI workflow, clinician-audit harness behavior, and production audit command contracts. The pathway tests verify the Rush hs-TnI pathway PDF branches and boundary values:
 - STEMI/EQV diamond routing
 - 99% URL thresholds (boundary values)
 - Early MI rule-out (all 6 gate conditions)
@@ -116,9 +116,19 @@ npm run audit:prod:browser
 
 The audit defaults to `https://rush-chest-pain-cds.vercel.app` and can be pointed at another deployment with `PROD_BASE_URL=https://... npm run audit:prod:browser`. It drives the rendered app with Playwright, captures screenshots under `output/playwright/`, checks STEMI and ESRD regression flows, exercises one typed low-risk pathway, verifies the API `data-pathway-state` controller seam, and keeps the 30 canonical decision-tree cases grounded in deterministic Vitest coverage rather than nondeterministic live LLM replay.
 
+For adversarial production stress checks, run:
+
+```bash
+npm run audit:prod:md-stress
+```
+
+The MD stress audit also defaults to `https://rush-chest-pain-cds.vercel.app`. It replays 60 production API cases with busy/complaining clinician phrasing and drives six visible browser workflows: skip attempt, terse low-risk path, STEMI terminal, ESRD regression, intermediate delta to 4-hour HST, and correction handling. Screenshots and summaries are written under ignored `output/md-stress/` artifacts.
+
 ## Pre-Deployment
 
 Use [PRE_DEPLOYMENT_CHECKLIST.md](PRE_DEPLOYMENT_CHECKLIST.md) before any public demo, clinical pilot, or production deploy.
+
+Before describing the app as production-grade clinical CDS, complete the owner sign-off in [docs/validation/PRODUCTION_READINESS_CHECKLIST.md](docs/validation/PRODUCTION_READINESS_CHECKLIST.md) and the ED/cardiology review worksheet in [docs/validation/CLINICIAN_VALIDATION_PACK.md](docs/validation/CLINICIAN_VALIDATION_PACK.md). The current appropriate posture is monitored pilot or controlled preview until those gates are signed.
 
 ## Project Structure
 
@@ -151,6 +161,7 @@ src/
 
 ## Safety
 
+- Current status: automated pathway and production stress audits are passing, but clinical governance and human-factors sign-off are still required before calling the app production-grade clinical CDS.
 - **16 critical safety rules** in the system prompt keep the LLM in a guide-only role and prevent it from fabricating clinical decisions, skipping steps, bypassing PENDING results, repeating answered steps, or treating the app as an independent decision-maker
 - The app is framed as surfacing a prespecified Rush hs-TnI protocol, not making independent clinical decisions
 - All clinical logic runs in deterministic, tested server-side tool functions — the LLM cannot compute thresholds, deltas, or dispositions

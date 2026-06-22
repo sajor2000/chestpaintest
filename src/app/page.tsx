@@ -7,12 +7,15 @@ import type { FileUIPart } from "ai";
 import {
   cleanQuickReplyPromptText,
   cleanRepeatedQuestionText,
+  getControllerInputHelpText,
   getControllerPathwayStep,
+  getControllerQuestionText,
   getControllerQuickReplyOptions,
   getStepGuidance,
   isDuplicateQuickReplyPromptText,
   normalizeQuickReplyOptions,
   PATHWAY_STEPS,
+  shouldSuppressAssistantTextForControllerState,
   type PathwayStepId,
 } from "@/lib/pathway-ui";
 import type { PathwayControllerSnapshot } from "@/lib/pathway-controller";
@@ -242,6 +245,59 @@ function ControllerResultCards({
         }
         return null;
       })}
+    </div>
+  );
+}
+
+function ControllerQuestionBlock({
+  snapshot,
+  isLast,
+  isLoading,
+  onReply,
+}: {
+  snapshot: PathwayControllerSnapshot;
+  isLast: boolean;
+  isLoading: boolean;
+  onReply: (text: string) => void;
+}) {
+  const question = getControllerQuestionText(snapshot);
+  if (!question) return null;
+  const helpText = getControllerInputHelpText(snapshot);
+
+  return (
+    <div className="mt-2 rounded-lg border border-[#006332]/15 bg-[#f9fbfa] p-3 text-sm text-[#353535]">
+      <div className="text-[11px] font-bold uppercase tracking-wide text-[#006332]">
+        Required pathway input
+      </div>
+      <div className="mt-1 font-medium">{question}</div>
+      {helpText && (
+        <div className="mt-1 text-xs leading-snug text-[#606060]">
+          {helpText}
+        </div>
+      )}
+      {snapshot.allowedOptions.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {snapshot.allowedOptions.map((opt) => (
+            <button
+              key={opt}
+              data-testid="quick-reply-button"
+              aria-label={`Quick reply: ${opt}`}
+              disabled={!isLast || isLoading}
+              onClick={() => {
+                if (!isLast || isLoading) return;
+                onReply(opt);
+              }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${
+                isLast && !isLoading
+                  ? "border-[#006332] text-[#006332] bg-white hover:bg-[#006332] hover:text-white cursor-pointer"
+                  : "border-gray-200 text-gray-400 bg-gray-50 cursor-default"
+              }`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -731,6 +787,15 @@ export default function Chat() {
             >
               {msg.parts.map((part, i) => {
                 if (part.type === "text") {
+                  if (
+                    msg.role === "assistant" &&
+                    shouldSuppressAssistantTextForControllerState(
+                      messageControllerState
+                    )
+                  ) {
+                    return null;
+                  }
+
                   const previousFollowupIndex = msg.parts
                     .slice(0, i)
                     .findLastIndex((p) => p.type === "tool-suggest_followups");
@@ -896,11 +961,17 @@ export default function Chat() {
                   );
                 }
                 if (isControllerDataPart(part) && part.data) {
+                  const isLast = msg.id === messages[messages.length - 1]?.id;
                   return (
-                    <ControllerResultCards
-                      key={`${msg.id}-${i}`}
-                      snapshot={part.data}
-                    />
+                    <div key={`${msg.id}-${i}`}>
+                      <ControllerResultCards snapshot={part.data} />
+                      <ControllerQuestionBlock
+                        snapshot={part.data}
+                        isLast={isLast}
+                        isLoading={isLoading}
+                        onReply={(text) => sendMessage({ text })}
+                      />
+                    </div>
                   );
                 }
                 return null;
