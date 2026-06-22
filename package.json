@@ -9,6 +9,7 @@
     "lint": "eslint",
     "audit:prod:browser": "node scripts/audit-prod-browser.mjs",
     "audit:prod:md-stress": "node scripts/audit-prod-md-stress.mjs",
+    "audit:prod:hst-regressions": "node scripts/audit-prod-hst-regressions.mjs",
     "audit:clinician-judge": "node scripts/audit-clinician-judge.mjs"
   },
   "dependencies": {

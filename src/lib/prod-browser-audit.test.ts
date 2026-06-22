@@ -34,6 +34,27 @@ describe("production browser audit harness", () => {
     expect(script).toContain("complaining MD");
     expect(script).toContain("enabled buttons");
     expect(script).toContain("no usable locator after");
+    expect(script).toContain(
+      "20 percent rule below threshold routes chronic injury"
+    );
+    expect(script).toContain('expectRisk("CHRONIC_INJURY")');
+    expect(script).toContain("summarizeApiCaseOutcomes");
+  });
+
+  it("exposes a repeatable HST prototype regression production replay command", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const script = readFileSync("scripts/audit-prod-hst-regressions.mjs", "utf8");
+
+    expect(packageJson.scripts?.["audit:prod:hst-regressions"]).toBe(
+      "node scripts/audit-prod-hst-regressions.mjs"
+    );
+    expect(script).toContain("output/hst-regressions");
+    expect(script).toContain("PROD_BASE_URL");
+    expect(script).toContain("data-pathway-state");
+    expect(script).toContain("high-value 20 percent delta routes high");
+    expect(script).toContain("compound duration advances to 0h HST");
   });
 
   it("exposes a report-first clinician LLM judge harness", () => {

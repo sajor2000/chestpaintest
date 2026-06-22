@@ -2,6 +2,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { chromium } from "playwright";
+import {
+  buildApiCaseFailureSummary,
+  buildApiCasePassSummary,
+  summarizeApiCaseOutcomes,
+  summarizeMdStressState,
+} from "./md-stress-result.mjs";
 
 const PROD_BASE_URL =
   process.env.PROD_BASE_URL ?? "https://rush-chest-pain-cds.vercel.app";
@@ -392,9 +398,9 @@ const API_CASES = [
     expect: expectRisk("HIGH"),
   },
   {
-    name: "20 percent rule below threshold asks 4h",
+    name: "20 percent rule below threshold routes chronic injury",
     turns: [...basicsTurns(), a("What is the 0-hour HST value in ng/L?"), u("100"), a("What is the 2-hour HST value in ng/L?"), u("119"), a("Does the repeat 2-hour EKG show ischemic ST or T-wave changes?"), u("No ischemic changes")],
-    expect: expectRequired("hst4", undefined),
+    expect: expectRisk("CHRONIC_INJURY"),
   },
   {
     name: "20 percent rule at threshold routes high",
@@ -573,14 +579,7 @@ function assertNoUnsafeModelText(stream, caseName) {
 
 function assertExpectedState(state, expected, caseName) {
   const stateSummary = () =>
-    JSON.stringify({
-      requiredField: state.requiredField,
-      terminal: state.terminal,
-      risk: getResultRisk(state) ?? null,
-      action: getResultAction(state) ?? null,
-      acceptedFields: state.acceptedFields,
-      values: state.values,
-    });
+    JSON.stringify(summarizeMdStressState(state));
 
   if ("requiredField" in expected) {
     assert(
@@ -635,35 +634,55 @@ async function runApiCase(testCase) {
   const state = pathwayStatePart(stream);
   assert(state, `${testCase.name}: stream did not include data-pathway-state`);
   assertExpectedState(state, testCase.expect, testCase.name);
-  return {
-    name: testCase.name,
-    requiredField: state.requiredField,
-    terminal: state.terminal,
-    risk: getResultRisk(state) ?? null,
-    action: getResultAction(state) ?? null,
-  };
+  return buildApiCasePassSummary(testCase.name, state);
 }
 
 async function runApiStress() {
   const selected = API_CASES.slice(0, API_LIMIT);
-  const summaries = [];
+  const outcomes = [];
   let cursor = 0;
 
   async function worker() {
     while (cursor < selected.length) {
+      const index = cursor;
       const testCase = selected[cursor];
       cursor += 1;
-      summaries.push(await runApiCase(testCase));
+      try {
+        outcomes[index] = {
+          status: "pass",
+          summary: await runApiCase(testCase),
+        };
+      } catch (error) {
+        outcomes[index] = {
+          status: "fail",
+          summary: buildApiCaseFailureSummary(testCase.name, error),
+        };
+      }
     }
   }
 
-  await runStep(`API adversarial controller cases (${selected.length})`, async () => {
-    await Promise.all(
-      Array.from({ length: Math.min(API_CONCURRENCY, selected.length) }, () => worker())
+  await Promise.all(
+    Array.from({ length: Math.min(API_CONCURRENCY, selected.length) }, () => worker())
+  );
+
+  const aggregate = summarizeApiCaseOutcomes(outcomes);
+  if (aggregate.failures.length === 0) {
+    record(
+      `API adversarial controller cases (${selected.length})`,
+      "pass",
+      `${selected.length} complaining MD API cases passed`
     );
-    return `${selected.length} complaining MD API cases passed`;
-  });
-  return summaries;
+  } else {
+    for (const failure of aggregate.failures) {
+      record(`API adversarial controller case: ${failure.name}`, "fail", failure.error);
+    }
+    record(
+      `API adversarial controller cases (${selected.length})`,
+      "fail",
+      `${aggregate.failures.length} of ${selected.length} API case(s) failed`
+    );
+  }
+  return aggregate.apiSummaries;
 }
 
 function escapeRegExp(value) {

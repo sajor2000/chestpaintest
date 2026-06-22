@@ -13,7 +13,7 @@ The chatbot walks the physician through the pathway step by step:
 5. **HEART Score** — LLM-guided 5-component scoring with visual breakdown card
 6. **Disposition** — Low (discharge) / Intermediate (observation) / Chronic Injury / High (admit) / Pending (4hr or repeat HST required)
 
-**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic server-owned tool functions. The current suite has 274 tests, including 87 pathway tool tests, a 30-case original decision-tree audit, 30 matching controller cases, clinician-audit harness checks, and a 6-case June 2026 prototype regression suite that exercises the major Rush hs-TnI branches end to end.
+**The LLM never computes clinical values.** All thresholds, deltas, risk levels, and dispositions run through deterministic server-owned tool functions. The current suite has 277 tests, including 87 pathway tool tests, a 30-case original decision-tree audit, 30 matching controller cases, clinician-audit and production-audit harness checks, and a 6-case June 2026 prototype regression suite that exercises the major Rush hs-TnI branches end to end.
 
 ## Features
 
@@ -38,7 +38,7 @@ The chatbot walks the physician through the pathway step by step:
 | AI SDK | Vercel AI SDK v6 (`@ai-sdk/azure`, `@ai-sdk/react`) |
 | LLM | Azure OpenAI GPT-4.1-mini (Chat Completions API) |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest (274 tests; 87 pathway tool tests; 30-case tool audit; 30-case controller audit; 6-case prototype regression suite) plus live production browser, clinician-judge, and MD stress audit harnesses |
+| Testing | Vitest (277 tests; 87 pathway tool tests; 30-case tool audit; 30-case controller audit; 6-case prototype regression suite) plus live production browser, clinician-judge, HST replay, and MD stress audit harnesses |
 | FHIR | SMART on FHIR scaffold; add `fhirclient` during Phase 2 Epic integration |
 
 ## Setup
@@ -86,7 +86,7 @@ Use `.env.example` as the template. Do not commit `.env.local`.
 npx vitest run
 ```
 
-274 tests cover the pathway logic, 30-case original decision-tree audit, 30-case deterministic controller audit, June 2026 prototype regressions, request sanitization, route guard, prompt-backed parser guardrails, server-side assistant stream cleanup, system-prompt safety framing, pathway UI workflow, clinician-audit harness behavior, and production audit command contracts. The pathway tests verify the Rush hs-TnI pathway PDF branches and boundary values:
+277 tests cover the pathway logic, 30-case original decision-tree audit, 30-case deterministic controller audit, June 2026 prototype regressions, request sanitization, route guard, prompt-backed parser guardrails, server-side assistant stream cleanup, system-prompt safety framing, pathway UI workflow, clinician-audit harness behavior, MD stress aggregation behavior, and production audit command contracts. The pathway tests verify the Rush hs-TnI pathway PDF branches and boundary values:
 - STEMI/EQV diamond routing
 - 99% URL thresholds (boundary values)
 - Early MI rule-out (all 6 gate conditions)
@@ -123,6 +123,14 @@ npm run audit:prod:md-stress
 ```
 
 The MD stress audit also defaults to `https://rush-chest-pain-cds.vercel.app`. It replays 60 production API cases with busy/complaining clinician phrasing and drives six visible browser workflows: skip attempt, terse low-risk path, STEMI terminal, ESRD regression, intermediate delta to 4-hour HST, and correction handling. Screenshots and summaries are written under ignored `output/md-stress/` artifacts.
+
+For the June 2026 HST prototype failure replay against production or preview, run:
+
+```bash
+npm run audit:prod:hst-regressions
+```
+
+The HST replay audit also defaults to `https://rush-chest-pain-cds.vercel.app`. It posts the six previous HST prototype failure conversations to `/api/chat`, verifies deterministic `data-pathway-state` outcomes, and writes a summary under ignored `output/hst-regressions/` artifacts.
 
 ## Pre-Deployment
 
