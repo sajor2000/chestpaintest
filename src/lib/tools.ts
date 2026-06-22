@@ -563,7 +563,7 @@ export const determineDisposition = tool({
       };
     }
 
-    if (input.any_troponin_above_url) {
+    if (input.any_troponin_above_url && !input.has_4hr_result) {
       return {
         risk: "CHRONIC_INJURY",
         disposition: DISPOSITIONS.CHRONIC_INJURY,

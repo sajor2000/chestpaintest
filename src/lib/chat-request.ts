@@ -82,6 +82,38 @@ function parseNumberLike(value: string) {
   return null;
 }
 
+function parseDurationNumber(value: string) {
+  const parsed = parseNumberLike(value);
+  return parsed === null ? null : Number(parsed);
+}
+
+function parseDurationHoursText(text: string) {
+  const trimmed = text.trim();
+  const hourMinute = trimmed.match(
+    /^(.+?)\s*(?:hours|hour|hrs|hr|h)\s*(?:and\s*)?(.+?)\s*(?:minutes|minute|mins|min|m)$/i
+  );
+  if (hourMinute) {
+    const hours = parseDurationNumber(hourMinute[1]);
+    const minutes = parseDurationNumber(hourMinute[2]);
+    if (hours !== null && minutes !== null) return hours + minutes / 60;
+  }
+
+  const hours = trimmed.match(/^(.+?)\s*(?:hours|hour|hrs|hr|h)$/i);
+  if (hours) return parseDurationNumber(hours[1]);
+
+  const minutes = trimmed.match(/^(.+?)\s*(?:minutes|minute|mins|min|m)$/i);
+  if (minutes) {
+    const parsedMinutes = parseDurationNumber(minutes[1]);
+    return parsedMinutes === null ? null : parsedMinutes / 60;
+  }
+
+  return parseDurationNumber(trimmed);
+}
+
+function formatDurationHours(hours: number) {
+  return Number.isInteger(hours) ? String(hours) : String(Number(hours.toFixed(2)));
+}
+
 function normalizeTextForPathwayContext(
   text: string,
   activeQuestion?: string | null
@@ -208,18 +240,17 @@ function normalizeTextForPathwayContext(
     return `Chest pain onset: ${text.trim()}. This is not an HST/troponin value.`;
   }
 
+  const durationHours = parseDurationHoursText(text);
   if (
     (question.includes("duration") ||
       (question.includes("how many") && question.includes("hours")) ||
       (question.includes("hours") && question.includes("present"))) &&
     (question.includes("symptom") ||
       question.includes("symptoms") ||
-      question.includes("chest pain"))
+      question.includes("chest pain")) &&
+    durationHours !== null
   ) {
-    const durationHours = parseNumberLike(text);
-    if (durationHours !== null) {
-      return `Symptom duration: ${durationHours} hours. This is not an HST/troponin value.`;
-    }
+    return `Symptom duration: ${formatDurationHours(durationHours)} hours. This is not an HST/troponin value.`;
   }
 
   if (

@@ -196,9 +196,9 @@ const controllerCases = [
     expected: { terminal: true, risk: "HIGH", delta: "significant" },
   },
   {
-    name: "18 HST at or above 100 uses the 20% rule; 19% is not significant",
+    name: "18 HST at or above 100 uses the 20% rule; 19% is not significant and routes chronic injury",
     text: `${baseControllerText} 0-hour HST is 100 ng/L. 2-hour HST is 119 ng/L. 2-hour repeat EKG ischemic changes: no.`,
-    expected: { requiredField: "hst4", delta: "intermediate" },
+    expected: { terminal: true, risk: "CHRONIC_INJURY", delta: "intermediate" },
   },
   {
     name: "19 HST at or above 100 uses the 20% rule; exactly 20% is significant",
