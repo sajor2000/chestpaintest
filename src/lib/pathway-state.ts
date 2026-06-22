@@ -107,6 +107,42 @@ function extractLatestNumber(text: string, patterns: RegExp[]) {
   return latest?.value;
 }
 
+function parseDurationHoursText(text: string) {
+  const candidates: { index: number; value: number }[] = [];
+  const hourMinutePattern =
+    /(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s*(?:and\s*)?(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b/gi;
+  for (const match of text.matchAll(hourMinutePattern)) {
+    candidates.push({
+      index: match.index,
+      value: Number(match[1]) + Number(match[2]) / 60,
+    });
+  }
+
+  const hourPattern = /(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/gi;
+  for (const match of text.matchAll(hourPattern)) {
+    const insideCombined = candidates.some(
+      (candidate) =>
+        candidate.index <= match.index && match.index < candidate.index + 30
+    );
+    if (!insideCombined) {
+      candidates.push({ index: match.index, value: Number(match[1]) });
+    }
+  }
+
+  const minutePattern = /(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b/gi;
+  for (const match of text.matchAll(minutePattern)) {
+    const insideCombined = candidates.some(
+      (candidate) =>
+        candidate.index <= match.index && match.index < candidate.index + 40
+    );
+    if (!insideCombined) {
+      candidates.push({ index: match.index, value: Number(match[1]) / 60 });
+    }
+  }
+
+  return candidates.sort((a, b) => a.index - b.index).at(-1)?.value;
+}
+
 function removeRepeatEkgClauses(text: string) {
   return text
     .replace(
@@ -249,14 +285,22 @@ export function resolvePathwayState(messages: UIMessage[]): PathwayState {
     )
   );
 
-  const symptomDurationHours = latestMatch(texts, (text) =>
-    extractLatestNumber(text, [
+  const symptomDurationHours = latestMatch(texts, (text) => {
+    const durationContext =
+      /\bsymptom duration\b|\bsymptoms?\s+(?:started|began)\b|\bsx\b|\bsymptoms?\b/i.test(
+        text
+      );
+    if (durationContext) {
+      const parsedDuration = parseDurationHoursText(text);
+      if (parsedDuration !== undefined) return parsedDuration;
+    }
+    return extractLatestNumber(text, [
       /symptom duration:\s*(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/gi,
       /symptoms?\s+(?:started|began)\s+(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s+ago/gi,
       /\bsx\s*[<>]?\s*(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/gi,
       /(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s+(?:of\s+)?symptoms/gi,
-    ])
-  );
+    ]);
+  });
 
   const ongoingChestPain = latestMatch(texts, (text) =>
     extractBoolean(

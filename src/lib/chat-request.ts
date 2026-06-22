@@ -31,6 +31,30 @@ function normalizeYesNo(value: string) {
   return null;
 }
 
+function parseDurationHoursText(text: string) {
+  const trimmed = text.trim();
+  const hourMinute = trimmed.match(
+    /^(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s*(?:and\s*)?(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)$/i
+  );
+  if (hourMinute) {
+    return Number(hourMinute[1]) + Number(hourMinute[2]) / 60;
+  }
+
+  const hours = trimmed.match(/^(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)$/i);
+  if (hours) return Number(hours[1]);
+
+  const minutes = trimmed.match(
+    /^(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)$/i
+  );
+  if (minutes) return Number(minutes[1]) / 60;
+
+  return null;
+}
+
+function formatDurationHours(hours: number) {
+  return Number.isInteger(hours) ? String(hours) : String(Number(hours.toFixed(2)));
+}
+
 function normalizeTextForPathwayContext(
   text: string,
   activeQuestion?: string | null
@@ -146,6 +170,7 @@ function normalizeTextForPathwayContext(
     return `Chest pain onset: ${text.trim()}. This is not an HST/troponin value.`;
   }
 
+  const durationHours = parseDurationHoursText(text);
   if (
     (question.includes("duration") ||
       (question.includes("how many") && question.includes("hours")) ||
@@ -153,9 +178,9 @@ function normalizeTextForPathwayContext(
     (question.includes("symptom") ||
       question.includes("symptoms") ||
       question.includes("chest pain")) &&
-    /^\d+(?:\.\d+)?\s*(?:h|hr|hrs|hour|hours)$/i.test(text.trim())
+    durationHours !== null
   ) {
-    return `Symptom duration: ${text.trim()}. This is not an HST/troponin value.`;
+    return `Symptom duration: ${formatDurationHours(durationHours)} hours. This is not an HST/troponin value.`;
   }
 
   if (

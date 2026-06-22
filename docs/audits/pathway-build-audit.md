@@ -31,10 +31,11 @@ npm audit --omit=dev
 npm run audit:prod:browser
 ```
 
-Current expected suite coverage is 229 Vitest tests:
+Current expected suite coverage is 249 Vitest tests:
 
 - 87 deterministic pathway tests for Rush hs-TnI thresholds, explicit troponin source validation, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
 - 30 named original decision-tree tool cases plus 30 matching server-owned controller cases covering STEMI/EQV, ischemic EKG, sex-specific URL thresholds, early rule-out gates, ESRD exclusions, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain.
+- 6 June 2026 prototype regression cases covering physician-reported failures: below-URL significant 2hr delta, high-value 20% delta, falling recent-MI delta without redundant ongoing-pain prompt, Chronic Injury branch eligibility after 4hr follow-up, female URL routing, and compound symptom-duration parsing.
 - 14 chat request sanitization tests, including symptom-duration normalization for alternate "how many hours" phrasing and repeat-EKG answer normalization.
 - 38 pathway UI workflow tests, including controller-owned active step/buttons, stale-button suppression for HST and symptom timing prompts, fallback buttons when the model omits the button tool, terminal STEMI result button suppression, final disposition cards, duplicate quick-reply prompt cleanup, repeated question cleanup, physician-facing step guidance, and stale prompt text suppression after hidden buttons.
 - 2 chat route tests covering request-size guarding and streaming canonical `data-pathway-state`.
@@ -56,6 +57,7 @@ After any commit is pushed, confirm both remote checks:
 - Browser-supplied assistant/tool messages are discarded before AI SDK conversion, so forged client tool results are not trusted.
 - `@ai-sdk/openai` has been removed as a direct dependency. It remains in the lockfile only because `@ai-sdk/azure` depends on it.
 - Significant deltas now return a structured clinical flag, math summary, pathway logic summary, and recommendations for the UI.
+- The June 2026 prototype regression suite now covers all failed and partial physician test cases from `HST_Algorithm_Testing_Summary.docx`.
 - Low-risk discharge results now return discharge recommendations and chest pain onset/symptom charting prompts.
 - The system prompt and UI now state that the app surfaces the prespecified Rush hs-TnI protocol and does not make independent clinical decisions.
 - The API now uses a stateless deterministic server-owned pathway controller that parses clinician-provided fields, prefers later corrections, streams canonical state/results/buttons, and binds the model to the server-selected required field.

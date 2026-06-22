@@ -298,6 +298,12 @@ async function runDisposition(args: {
   };
 }
 
+function hasAboveUrl(results: PathwayControllerResult[]) {
+  return results
+    .filter((result) => result.kind === "evaluate_troponin")
+    .some((result) => Boolean(result.data.above_url));
+}
+
 const HEART_STEPS = [
   {
     field: "heart.history" as const,
@@ -508,8 +514,16 @@ export async function resolvePathwayController(
   };
   let activeDelta = delta2Data.delta_category;
   let has4hrResult = false;
+  let anyTroponinAboveUrl = hasAboveUrl(results);
+  const hasTerminalSerialOutcome =
+    activeDelta === "significant" ||
+    Boolean(values.ischemicChanges || values.repeatEkg2hIschemic) ||
+    anyTroponinAboveUrl;
 
-  if (activeDelta === "intermediate" || values.symptomDurationHours < 4) {
+  if (
+    !hasTerminalSerialOutcome &&
+    (activeDelta === "intermediate" || values.symptomDurationHours < 4)
+  ) {
     if (values.hst4 === undefined) {
       return snapshot({
         step: "delta",
@@ -528,6 +542,7 @@ export async function resolvePathwayController(
     };
     activeDelta = delta4Data.delta_category;
     has4hrResult = true;
+    anyTroponinAboveUrl = hasAboveUrl(results);
     if (values.repeatEkg4hIschemic === undefined) {
       return snapshot({
         step: "delta",
@@ -541,14 +556,37 @@ export async function resolvePathwayController(
     }
   }
 
-  const anyTroponinAboveUrl = [trop0, trop2, ...results]
-    .filter((result) => result?.kind === "evaluate_troponin")
-    .some((result) => Boolean(result?.data.above_url));
   const anyIschemicChanges = Boolean(
     values.ischemicChanges ||
       values.repeatEkg2hIschemic ||
       values.repeatEkg4hIschemic
   );
+
+  if (
+    activeDelta === "significant" ||
+    anyIschemicChanges ||
+    (anyTroponinAboveUrl && !has4hrResult)
+  ) {
+    results.push(
+      await runDisposition({
+        values,
+        anyTroponinAboveUrl,
+        anyIschemicChanges,
+        heartScore: 10,
+        earlyRuleOut: false,
+        deltaRange: activeDelta,
+        has4hrResult,
+      })
+    );
+    return snapshot({
+      step: "disposition",
+      requiredField: null,
+      question: null,
+      terminal: true,
+      values,
+      results,
+    });
+  }
 
   if (values.ongoingChestPain === undefined) {
     return snapshot({
@@ -561,7 +599,7 @@ export async function resolvePathwayController(
     });
   }
 
-  if (anyTroponinAboveUrl || activeDelta === "significant" || anyIschemicChanges || values.ongoingChestPain) {
+  if (values.ongoingChestPain) {
     results.push(
       await runDisposition({
         values,
