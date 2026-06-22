@@ -30,9 +30,10 @@ npm run build
 npm audit --omit=dev
 npm run audit:prod:browser
 npm run audit:prod:md-stress
+npm run audit:prod:hst-regressions
 ```
 
-Current expected suite coverage is 274 Vitest tests:
+Current expected suite coverage is 277 Vitest tests:
 
 - 87 deterministic pathway tests for Rush hs-TnI thresholds, explicit troponin source validation, deltas (including 3-lane routing, 20% switching rule, clinical delta flag, and math summary), HEART score (with labels), ESRD guard, explicit low clinical suspicion gating, dispositions, PENDING_4HR, PENDING_REPEAT (Footnote F), low-risk charting prompts, and end-to-end patient scenarios.
 - 30 named original decision-tree tool cases plus 30 matching server-owned controller cases covering STEMI/EQV, ischemic EKG, sex-specific URL thresholds, early rule-out gates, ESRD exclusions, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain.
@@ -45,6 +46,7 @@ Current expected suite coverage is 274 Vitest tests:
 - 8 prompt-backed pathway state tests covering accepted-field extraction, latest correction precedence, normalized ESRD false parsing, and HEART false-positive parsing guards.
 - 8 system prompt safety-framing tests that require protocol-only wording, early rule-out flow, explicit troponin value gating, typed yes/no progression, typed HST source handling, explicit suspicion gating, final-disposition stop behavior, and clean quick-reply wording.
 - Clinician-audit helper tests covering report-first judge results, strict-mode failures, browser-blocked classification, controller-owned quick replies, and stale quick-reply detection.
+- MD stress helper tests covering production API failure aggregation and deterministic state summaries.
 - Production audit harness contract tests covering repeatable live production commands and safe generated-artifact defaults.
 
 After any commit is pushed, confirm both remote checks:
@@ -68,7 +70,8 @@ After any commit is pushed, confirm both remote checks:
 - Quick-reply UX was tightened so the prompt asks the model not to repeat button labels in prose, and HEART score card labels now wrap instead of truncating clinical labels.
 - The UI now includes a guided-CDS panel that makes the original pathway easier to follow by showing the current node, needed clinician input, pathway rationale, and guardrail.
 - Live production browser audit is available through `npm run audit:prod:browser`; it exercises STEMI, ESRD, one typed low-risk pathway flow, and the API `data-pathway-state` controller seam against the target URL, then writes screenshots to ignored `output/playwright/` artifacts.
-- Live production MD stress audit is available through `npm run audit:prod:md-stress`; it replays 60 adversarial clinician API cases and six browser workflows against the target URL, then writes screenshots and summaries to ignored `output/md-stress/` artifacts.
+- Live production MD stress audit is available through `npm run audit:prod:md-stress`; it replays 60 adversarial clinician API cases and six browser workflows against the target URL, aggregates all selected API failures before exiting, then writes screenshots and summaries to ignored `output/md-stress/` artifacts.
+- Live production HST replay audit is available through `npm run audit:prod:hst-regressions`; it replays the six June 2026 prototype failure cases against the target URL and writes summaries to ignored `output/hst-regressions/` artifacts.
 - The next major safety improvements are clinical owner sign-off, human-factors review, institutional access control, and durable authenticated persistence/audit trail before Epic or unsupervised clinical production use.
 
 ## Current Release Verification (2026-05-11)
@@ -83,6 +86,7 @@ After any commit is pushed, confirm both remote checks:
   - `npm run build`
   - `npm run audit:prod:browser`
   - `npm run audit:prod:md-stress`
+  - `npm run audit:prod:hst-regressions`
 - Latest live production evidence from 2026-05-11: the MD stress API audit passed 60/60 adversarial cases, and the browser-only stress run passed 6/6 visible workflows with console health passing.
 
 ## PDF Fidelity Audit (2026-05-08)
