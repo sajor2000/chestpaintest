@@ -31,6 +31,10 @@ export function buildApiCaseFailureSummary(name, error) {
   return {
     name,
     status: "fail",
+    requiredField: null,
+    terminal: null,
+    risk: null,
+    action: null,
     error: error instanceof Error ? error.message : String(error),
   };
 }

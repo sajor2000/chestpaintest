@@ -259,7 +259,7 @@ export function resolvePathwayState(messages: UIMessage[]): PathwayState {
   const stemiOrEquivalent = latestMatch(texts, (text) =>
     extractLatestBoolean(
       text,
-      /\b(?:yes\s*-\s*)?(?:stemi|stemi equivalent|stemi\/eqv)\b(?![^.\n]*\bno\b)/gi,
+      /\b(?:yes\s*-\s*)?(?:stemi|stemi equivalent|stemi\/eqv|de\s+winter(?:\s+pattern)?)\b(?![^.\n]*\bno\b)/gi,
       /\bno\s+stemi\s+or\s+stemi equivalent\b|\bno\s+(?:stemi equivalent|stemi|stemi\/eqv)\b/gi
     )
   );

@@ -2,9 +2,14 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
+import { HST_WORD_DOCUMENT_CASES } from "./hst-word-document-cases.mjs";
+
 const PROD_BASE_URL =
   process.env.PROD_BASE_URL ?? "https://rush-chest-pain-cds.vercel.app";
 const OUTPUT_DIR = path.resolve("output/hst-regressions");
+const CHAT_TIMEOUT_MS = Number(process.env.HST_REPLAY_TIMEOUT_MS ?? 30_000);
+const CHAT_URL = new URL("/api/chat", PROD_BASE_URL).href;
+let replayCookie = "";
 
 function nowIso() {
   return new Date().toISOString();
@@ -14,23 +19,49 @@ function uiMessage(id, text) {
   return { id, role: "user", parts: [{ type: "text", text }] };
 }
 
+function fixtureMessageToUiMessage(testCase, message, index) {
+  const id = `${testCase.name}-${index}`;
+  if (typeof message === "string") return uiMessage(id, message);
+  return {
+    id,
+    role: message.role,
+    parts: message.parts ?? [{ type: "text", text: message.text }],
+  };
+}
+
 function resultData(state, kind) {
   return state.results?.findLast?.((result) => result.kind === kind)?.data ?? null;
+}
+
+function resultDataForHour(state, kind, hour) {
+  return (
+    state.results?.findLast?.(
+      (result) => result.kind === kind && result.hour === hour
+    )?.data ?? null
+  );
 }
 
 function summarizeState(state) {
   const disposition = resultData(state, "determine_disposition");
   const delta = resultData(state, "calculate_delta");
+  const ekg = resultData(state, "assess_ekg");
+  const trop0 = resultDataForHour(state, "evaluate_troponin", "0");
 
   return {
     step: state.step,
     requiredField: state.requiredField ?? null,
     terminal: state.terminal ?? false,
+    action: ekg?.action ?? null,
     risk: disposition?.risk ?? null,
     disposition: disposition?.disposition ?? null,
     deltaCategory: delta?.delta_category ?? null,
     significantDelta: delta?.significant ?? null,
     clinicalDeltaFlag: delta?.clinical_delta_flag ?? null,
+    deltaMethod: delta?.method ?? null,
+    deltaDirection: delta?.direction ?? null,
+    url99Threshold0: trop0?.url_99_threshold ?? null,
+    aboveUrl0: trop0?.above_url ?? null,
+    footnotes: state.results?.flatMap((result) => result.data?.footnotes ?? []) ?? [],
     symptomDurationHours: state.values?.symptomDurationHours ?? null,
   };
 }
@@ -56,14 +87,60 @@ function pathwayStatePart(streamText) {
   )?.data;
 }
 
+function sanitizedTargetUrl() {
+  const url = new URL(PROD_BASE_URL);
+  url.searchParams.delete("_vercel_share");
+  return url.href.replace(/\/$/, "");
+}
+
+function setCookieHeaders(headers) {
+  if (typeof headers.getSetCookie === "function") {
+    return headers.getSetCookie();
+  }
+  const setCookie = headers.get("set-cookie");
+  return setCookie ? [setCookie] : [];
+}
+
+function cookieHeaderFromSetCookies(setCookies) {
+  return setCookies
+    .flatMap((header) => header.split(/,(?=\s*[^;,\s]+=)/))
+    .map((header) => header.split(";")[0]?.trim())
+    .filter(Boolean)
+    .join("; ");
+}
+
+async function resolveReplayCookie() {
+  if (process.env.HST_REPLAY_COOKIE) return process.env.HST_REPLAY_COOKIE;
+
+  const targetUrl = new URL(PROD_BASE_URL);
+  if (!targetUrl.searchParams.has("_vercel_share")) return "";
+
+  const response = await fetch(targetUrl.href, { redirect: "manual" });
+  const cookie = cookieHeaderFromSetCookies(setCookieHeaders(response.headers));
+  if (!cookie) {
+    throw new Error("Vercel share URL did not return an auth cookie");
+  }
+  return cookie;
+}
+
 async function postChat(messages) {
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, CHAT_TIMEOUT_MS);
     try {
-      const response = await fetch(`${PROD_BASE_URL.replace(/\/$/, "")}/api/chat`, {
+      const headers = { "content-type": "application/json" };
+      if (replayCookie) headers.cookie = replayCookie;
+
+      const response = await fetch(CHAT_URL, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({ messages }),
+        signal: controller.signal,
       });
       const text = await response.text();
       if (!response.ok) {
@@ -71,10 +148,14 @@ async function postChat(messages) {
       }
       return text;
     } catch (error) {
-      lastError = error;
+      lastError = timedOut
+        ? new Error(`POST /api/chat timed out after ${CHAT_TIMEOUT_MS} ms`)
+        : error;
       if (attempt < 3) {
         await new Promise((resolve) => setTimeout(resolve, attempt * 1_500));
       }
+    } finally {
+      clearTimeout(timeout);
     }
   }
   throw lastError;
@@ -83,139 +164,28 @@ async function postChat(messages) {
 function assertExpected(summary, expected) {
   const mismatches = [];
   for (const [key, value] of Object.entries(expected)) {
-    if (summary[key] !== value) {
+    if (key === "deltaMethodIncludes") {
+      if (!summary.deltaMethod?.includes(value)) {
+        mismatches.push(`deltaMethod: expected to include ${value}, got ${summary.deltaMethod}`);
+      }
+    } else if (key === "footnoteIncludes") {
+      if (!summary.footnotes?.includes(value)) {
+        mismatches.push(`footnotes: expected to include ${value}, got ${summary.footnotes}`);
+      }
+    } else if (summary[key] !== value) {
       mismatches.push(`${key}: expected ${value}, got ${summary[key]}`);
     }
   }
   return mismatches;
 }
 
-const CASES = [
-  {
-    name: "significant 2hr absolute delta below URL routes high",
-    messages: [
-      uiMessage("1a", "No STEMI."),
-      uiMessage("1b", "No ischemic EKG changes."),
-      uiMessage("1c", "Patient sex: male."),
-      uiMessage("1d", "ESRD: no."),
-      uiMessage("1e", "Symptom duration: 5 hours."),
-      uiMessage("1f", "0-hour HST value: 10 ng/L."),
-      uiMessage("1g", "2-hour HST value: 26 ng/L."),
-      uiMessage("1h", "2-hour repeat EKG ischemic changes: no."),
-    ],
-    expected: {
-      requiredField: null,
-      risk: "HIGH",
-      deltaCategory: "significant",
-      significantDelta: true,
-    },
-  },
-  {
-    name: "high-value 20 percent delta routes high",
-    messages: [
-      uiMessage("2a", "No STEMI."),
-      uiMessage("2b", "No ischemic EKG changes."),
-      uiMessage("2c", "Patient sex: male."),
-      uiMessage("2d", "ESRD: no."),
-      uiMessage("2e", "Symptom duration: 5 hours."),
-      uiMessage("2f", "0-hour HST value: 110 ng/L."),
-      uiMessage("2g", "2-hour HST value: 132 ng/L."),
-      uiMessage("2h", "2-hour repeat EKG ischemic changes: no."),
-    ],
-    expected: {
-      requiredField: null,
-      risk: "HIGH",
-      deltaCategory: "significant",
-      significantDelta: true,
-    },
-  },
-  {
-    name: "falling significant delta routes high without ongoing-pain prompt",
-    messages: [
-      uiMessage("3a", "No STEMI."),
-      uiMessage("3b", "No ischemic EKG changes."),
-      uiMessage("3c", "Patient sex: male."),
-      uiMessage("3d", "ESRD: no."),
-      uiMessage("3e", "Symptom duration: 6 hours."),
-      uiMessage("3f", "0-hour HST value: 90 ng/L."),
-      uiMessage("3g", "2-hour HST value: 70 ng/L."),
-      uiMessage("3h", "2-hour repeat EKG ischemic changes: no."),
-    ],
-    expected: {
-      requiredField: null,
-      risk: "HIGH",
-      deltaCategory: "significant",
-      significantDelta: true,
-    },
-  },
-  {
-    name: "intermediate 4hr branch stays intermediate, not chronic injury",
-    messages: [
-      uiMessage("4a", "No STEMI."),
-      uiMessage("4b", "No ischemic EKG changes."),
-      uiMessage("4c", "Patient sex: male."),
-      uiMessage("4d", "ESRD: no."),
-      uiMessage("4e", "Symptom duration: 5 hours."),
-      uiMessage("4f", "0-hour HST value: 10 ng/L."),
-      uiMessage("4g", "2-hour HST value: 18 ng/L."),
-      uiMessage("4h", "2-hour repeat EKG ischemic changes: no."),
-      uiMessage("4i", "4-hour HST value: 20 ng/L."),
-      uiMessage("4j", "4-hour repeat EKG ischemic changes: no."),
-      uiMessage(
-        "4k",
-        "HEART components: history 1, EKG 0, age 1, risk factors 2, troponin 0."
-      ),
-      uiMessage("4l", "Ongoing chest pain answer: No ongoing pain."),
-      uiMessage("4m", "No recent normal cardiac testing."),
-      uiMessage("4n", "No known chronic unchanged HST."),
-    ],
-    expected: {
-      requiredField: null,
-      risk: "INTERMEDIATE",
-      deltaCategory: "intermediate",
-      significantDelta: false,
-    },
-  },
-  {
-    name: "female above-URL minimal delta routes chronic injury",
-    messages: [
-      uiMessage("5a", "No STEMI."),
-      uiMessage("5b", "No ischemic EKG changes."),
-      uiMessage("5c", "Patient sex: female."),
-      uiMessage("5d", "ESRD: no."),
-      uiMessage("5e", "Symptom duration: 5 hours."),
-      uiMessage("5f", "0-hour HST value: 15 ng/L."),
-      uiMessage("5g", "2-hour HST value: 17 ng/L."),
-      uiMessage("5h", "2-hour repeat EKG ischemic changes: no."),
-      uiMessage("5i", "Ongoing chest pain answer: No ongoing pain."),
-    ],
-    expected: {
-      requiredField: null,
-      risk: "CHRONIC_INJURY",
-      deltaCategory: "minimal",
-      significantDelta: false,
-    },
-  },
-  {
-    name: "compound duration advances to 0h HST",
-    messages: [
-      uiMessage("6a", "No STEMI."),
-      uiMessage("6b", "No ischemic EKG changes."),
-      uiMessage("6c", "Patient sex: male."),
-      uiMessage("6d", "ESRD: no."),
-      uiMessage("6e", "Symptoms present for 3 hours 15 minutes."),
-    ],
-    expected: {
-      requiredField: "hst0",
-      risk: null,
-      symptomDurationHours: 3.25,
-    },
-  },
-];
-
 async function runCase(testCase) {
   try {
-    const stream = await postChat(testCase.messages);
+    const stream = await postChat(
+      testCase.messages.map((message, index) =>
+        fixtureMessageToUiMessage(testCase, message, index)
+      )
+    );
     const state = pathwayStatePart(stream);
     if (!state) {
       throw new Error(`stream did not include data-pathway-state: ${stream.slice(0, 300)}`);
@@ -242,13 +212,15 @@ async function runCase(testCase) {
 
 async function main() {
   const startedAt = nowIso();
+  replayCookie = await resolveReplayCookie();
   await mkdir(OUTPUT_DIR, { recursive: true });
-  console.log(`HST production regression replay started at ${startedAt}`);
-  console.log(`Target: ${PROD_BASE_URL}`);
+  console.log(`HST production Word-document replay started at ${startedAt}`);
+  console.log(`Target: ${sanitizedTargetUrl()}`);
+  if (replayCookie) console.log("Using Vercel replay auth cookie");
   console.log(`Artifacts: ${OUTPUT_DIR}`);
 
   const results = [];
-  for (const testCase of CASES) {
+  for (const testCase of HST_WORD_DOCUMENT_CASES) {
     const result = await runCase(testCase);
     results.push(result);
     const marker = result.status === "pass" ? "PASS" : "FAIL";
@@ -257,7 +229,7 @@ async function main() {
 
   const failed = results.filter((result) => result.status === "fail");
   const summary = {
-    target: PROD_BASE_URL,
+    target: sanitizedTargetUrl(),
     startedAt,
     finishedAt: nowIso(),
     casesRun: results.length,

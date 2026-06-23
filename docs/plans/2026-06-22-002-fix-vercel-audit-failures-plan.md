@@ -1,7 +1,6 @@
 ---
 title: "fix: Close Vercel audit failure gaps"
 type: fix
-status: completed
 date: 2026-06-22
 ---
 

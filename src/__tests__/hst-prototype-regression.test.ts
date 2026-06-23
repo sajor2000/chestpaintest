@@ -1,153 +1,122 @@
 import { describe, expect, it } from "vitest";
 import type { UIMessage } from "ai";
 
+import { HST_WORD_DOCUMENT_CASES } from "../../scripts/hst-word-document-cases.mjs";
 import { sanitizeClientMessages } from "../lib/chat-request";
 import { resolvePathwayController } from "../lib/pathway-controller";
-import { resolvePathwayState } from "../lib/pathway-state";
 
-const userMessage = (text: string): UIMessage => ({
-  id: crypto.randomUUID(),
-  role: "user",
-  parts: [{ type: "text", text }],
-});
+type FixtureMessage =
+  | string
+  | {
+      role: "user" | "assistant";
+      text?: string;
+      parts?: UIMessage["parts"];
+    };
 
-const resolve = (text: string) => resolvePathwayController([userMessage(text)]);
+const textPart = (text: string) => ({ type: "text" as const, text });
 
-const baseText =
-  "No STEMI. No ischemic changes. Male. No ESRD. Symptoms started 5 hours ago.";
+function fixtureMessageToUiMessage(
+  testCase: { name: string },
+  message: FixtureMessage,
+  index: number
+): UIMessage {
+  const id = `${testCase.name}-${index}`;
+  if (typeof message === "string") {
+    return { id, role: "user", parts: [textPart(message)] };
+  }
+  return {
+    id,
+    role: message.role,
+    parts: message.parts ?? [textPart(message.text ?? "")],
+  };
+}
 
-describe("June 2026 HST prototype regression cases", () => {
-  it("routes significant 2-hour absolute delta below URL to high risk without 4-hour HST", async () => {
-    const snapshot = await resolve(
-      `${baseText} 0-hour HST is 6 ng/L. 2-hour HST is 21 ng/L. 2-hour repeat EKG ischemic changes: no.`
+function resultData(
+  snapshot: Awaited<ReturnType<typeof resolvePathwayController>>,
+  kind: string
+) {
+  return snapshot.results.findLast((result) => result.kind === kind)?.data ?? null;
+}
+
+function resultDataForHour(
+  snapshot: Awaited<ReturnType<typeof resolvePathwayController>>,
+  kind: string,
+  hour: string
+) {
+  return (
+    snapshot.results.findLast(
+      (result) => result.kind === kind && result.hour === hour
+    )?.data ?? null
+  );
+}
+
+function summarizeSnapshot(
+  snapshot: Awaited<ReturnType<typeof resolvePathwayController>>
+) {
+  const disposition = resultData(snapshot, "determine_disposition");
+  const delta = resultData(snapshot, "calculate_delta");
+  const ekg = resultData(snapshot, "assess_ekg");
+  const trop0 = resultDataForHour(snapshot, "evaluate_troponin", "0");
+
+  return {
+    requiredField: snapshot.requiredField,
+    terminal: snapshot.terminal,
+    action: ekg?.action ?? null,
+    risk: disposition?.risk ?? null,
+    deltaCategory: delta?.delta_category ?? null,
+    significantDelta: delta?.significant ?? null,
+    deltaMethod: delta?.method ?? null,
+    deltaDirection: delta?.direction ?? null,
+    url99Threshold0: trop0?.url_99_threshold ?? null,
+    aboveUrl0: trop0?.above_url ?? null,
+    footnotes: snapshot.results.flatMap((result) => result.data?.footnotes ?? []),
+    symptomDurationHours: snapshot.values.symptomDurationHours ?? null,
+  };
+}
+
+function expectSummaryToMatchExpected(
+  summary: ReturnType<typeof summarizeSnapshot>,
+  expected: Record<string, unknown>
+) {
+  for (const [key, value] of Object.entries(expected)) {
+    if (key === "deltaMethodIncludes") {
+      expect(summary.deltaMethod).toContain(value);
+    } else if (key === "footnoteIncludes") {
+      expect(summary.footnotes).toContain(value);
+    } else {
+      expect(summary).toMatchObject({ [key]: value });
+    }
+  }
+}
+
+describe("June 2026 HST Word-document regression cases", () => {
+  it.each(HST_WORD_DOCUMENT_CASES)("$name", async (testCase) => {
+    const messages = testCase.messages.map((message: FixtureMessage, index: number) =>
+      fixtureMessageToUiMessage(testCase, message, index)
     );
+    const controllerMessages = sanitizeClientMessages(messages);
+    const snapshot = await resolvePathwayController(controllerMessages);
 
-    expect(snapshot.terminal).toBe(true);
-    expect(snapshot.requiredField).toBeNull();
-    expect(snapshot.results).toContainEqual(
-      expect.objectContaining({
-        kind: "calculate_delta",
-        hour: "2",
-        data: expect.objectContaining({ delta_category: "significant" }),
-      })
+    expectSummaryToMatchExpected(
+      summarizeSnapshot(snapshot),
+      testCase.expected as Record<string, unknown>
     );
-    expect(snapshot.results.at(-1)).toMatchObject({
-      kind: "determine_disposition",
-      data: { risk: "HIGH" },
-    });
   });
 
-  it("applies the high-value 20 percent delta rule at 2 hours without falling back to 4-hour HST", async () => {
-    const snapshot = await resolve(
-      `${baseText} 0-hour HST is 100 ng/L. 2-hour HST is 120 ng/L. 2-hour repeat EKG ischemic changes: no.`
+  it("normalizes the compound-duration active-question answer before controller resolution", () => {
+    const testCase = HST_WORD_DOCUMENT_CASES.find((entry) =>
+      entry.name.startsWith("General bug")
     );
+    expect(testCase).toBeDefined();
 
-    expect(snapshot.terminal).toBe(true);
-    expect(snapshot.requiredField).toBeNull();
-    expect(snapshot.results).toContainEqual(
-      expect.objectContaining({
-        kind: "calculate_delta",
-        hour: "2",
-        data: expect.objectContaining({
-          delta_category: "significant",
-          method: expect.stringContaining("20% change rule"),
-        }),
-      })
+    const messages = testCase!.messages.map(
+      (message: FixtureMessage, index: number) =>
+        fixtureMessageToUiMessage(testCase!, message, index)
     );
-    expect(snapshot.results.at(-1)).toMatchObject({
-      kind: "determine_disposition",
-      data: { risk: "HIGH" },
-    });
-  });
-
-  it("does not ask ongoing chest pain after a falling significant delta has already ruled high risk", async () => {
-    const snapshot = await resolve(
-      `${baseText} 0-hour HST is 30 ng/L. 2-hour HST is 10 ng/L. 2-hour repeat EKG ischemic changes: no.`
-    );
-
-    expect(snapshot.terminal).toBe(true);
-    expect(snapshot.requiredField).toBeNull();
-    expect(snapshot.results).toContainEqual(
-      expect.objectContaining({
-        kind: "calculate_delta",
-        data: expect.objectContaining({
-          delta_category: "significant",
-          direction: "falling",
-        }),
-      })
-    );
-    expect(snapshot.results.at(-1)).toMatchObject({
-      kind: "determine_disposition",
-      data: { risk: "HIGH" },
-    });
-  });
-
-  it("does not offer chronic injury after the intermediate-delta 4-hour branch", async () => {
-    const snapshot = await resolve(
-      `${baseText} 0-hour HST is 16 ng/L. 2-hour HST is 25 ng/L. 2-hour repeat EKG ischemic changes: no. 4-hour HST is 20 ng/L. 4-hour repeat EKG ischemic changes: no. No ongoing chest pain. HEART components: history 1, EKG 1, age 1, risk factors 1, troponin 0. No recent normal cardiac testing and no known chronic unchanged HST.`
-    );
-
-    expect(snapshot.terminal).toBe(true);
-    expect(snapshot.requiredField).toBeNull();
-    expect(snapshot.results).toContainEqual(
-      expect.objectContaining({
-        kind: "calculate_delta",
-        hour: "2",
-        data: expect.objectContaining({ delta_category: "intermediate" }),
-      })
-    );
-    expect(snapshot.results.at(-1)).toMatchObject({
-      kind: "determine_disposition",
-      data: { risk: "INTERMEDIATE" },
-    });
-  });
-
-  it("routes female above-URL minimal serial delta to chronic injury without 4-hour HST", async () => {
-    const snapshot = await resolve(
-      "No STEMI. No ischemic changes. Female. No ESRD. Symptoms started 5 hours ago. 0-hour HST is 16 ng/L. 2-hour HST is 17 ng/L. 2-hour repeat EKG ischemic changes: no."
-    );
-
-    expect(snapshot.terminal).toBe(true);
-    expect(snapshot.requiredField).toBeNull();
-    expect(snapshot.results).toContainEqual(
-      expect.objectContaining({
-        kind: "evaluate_troponin",
-        hour: "0",
-        data: expect.objectContaining({
-          url_99_threshold: 14,
-          above_url: true,
-        }),
-      })
-    );
-    expect(snapshot.results.at(-1)).toMatchObject({
-      kind: "determine_disposition",
-      data: { risk: "CHRONIC_INJURY" },
-    });
-  });
-
-  it("parses compound symptom duration text and advances to the 0-hour HST prompt", () => {
-    const sanitized = sanitizeClientMessages([
-      {
-        id: "assistant-duration",
-        role: "assistant",
-        parts: [
-          { type: "text", text: "How many hours have the symptoms been present?" },
-        ],
-      },
-      {
-        id: "user-duration",
-        role: "user",
-        parts: [{ type: "text", text: "3 hours 15 minutes" }],
-      },
-    ]);
-    const state = resolvePathwayState([
-      userMessage(
-        "No STEMI. No ischemic changes. Male. No ESRD. Symptoms started 3 hours 15 minutes ago."
-      ),
-    ]);
+    const sanitized = sanitizeClientMessages(messages);
 
     expect(sanitized.at(-1)).toEqual({
-      id: "user-duration",
+      id: `${testCase!.name}-5`,
       role: "user",
       parts: [
         {
@@ -156,7 +125,5 @@ describe("June 2026 HST prototype regression cases", () => {
         },
       ],
     });
-    expect(state.fields.symptomDurationHours).toBe(3.25);
-    expect(state.nextAction).toBe("Ask for the 0-hour HST value in ng/L.");
   });
 });
