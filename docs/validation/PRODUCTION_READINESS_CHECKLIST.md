@@ -23,7 +23,7 @@ Do not use stronger language such as "100% production-grade," "validated clinica
 - [ ] `npm audit --omit=dev` has no unresolved runtime issue accepted as a release blocker.
 - [ ] `npm run audit:prod:browser` passes against the target production or preview URL.
 - [ ] `npm run audit:prod:md-stress` passes against the target production or preview URL.
-- [ ] `npm run audit:prod:hst-regressions` passes against the target production or preview URL.
+- [ ] `npm run audit:prod:hst-regressions` passes the June 2026 Word-document replay against the target production or preview URL.
 - [ ] Generated screenshots and summaries remain under ignored `output/` paths and are not committed.
 
 ## Clinical Protocol Gate

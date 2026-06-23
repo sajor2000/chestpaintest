@@ -18,12 +18,12 @@ For clinical release readiness, also complete:
 - [ ] Run `npm run lint` and resolve all errors.
 - [ ] Run `npx vitest run` and confirm all tests pass.
 - [ ] Run `npx vitest run src/__tests__/pathway-decision-tree-30.test.ts` and confirm all 30 original decision-tree cases pass.
-- [ ] Run `npx vitest run src/__tests__/hst-prototype-regression.test.ts` and confirm the June 2026 physician prototype regressions pass.
+- [ ] Run `npx vitest run src/__tests__/hst-prototype-regression.test.ts` and confirm all June 2026 Word-document regression cases pass.
 - [ ] Run `npx vitest run src/lib/pathway-state.test.ts src/lib/chat-route.test.ts src/lib/system-prompt.test.ts` and confirm parser, route, and prompt guardrails pass.
 - [ ] Run `npm run build` and confirm TypeScript and production build pass.
 - [ ] Run `npm run audit:prod:browser` against the target Vercel URL and confirm the live STEMI, ESRD, and typed low-risk UI flows pass.
 - [ ] Run `npm run audit:prod:md-stress` against the target Vercel URL and confirm the adversarial MD API and browser workflow cases pass.
-- [ ] Run `npm run audit:prod:hst-regressions` against the target Vercel URL and confirm all six June 2026 prototype failure replays pass.
+- [ ] Run `npm run audit:prod:hst-regressions` against the target Vercel URL and confirm all 12 June 2026 Word-document scenarios plus the compound-duration parser case pass.
 - [ ] Run `npm audit --omit=dev` and review any runtime dependency advisories.
 
 ## Clinical Safety Gate
@@ -32,8 +32,8 @@ For clinical release readiness, also complete:
 - [ ] Confirm the protocol source version, effective date, and clinical owner are recorded for the release.
 - [ ] Confirm deterministic tool tests cover pathway thresholds, deltas, HEART score, ESRD guard, early rule-out, and dispositions.
 - [ ] Confirm the 30-case decision-tree audit covers STEMI, ischemic EKG, early rule-out, ESRD, PPV >200, delta lanes, 4hr-pending logic, repeat-HST pending logic, low/intermediate/chronic injury/high-risk dispositions, and ongoing chest pain.
-- [ ] Confirm the June 2026 prototype regression suite covers significant 2hr delta, high-value 20% delta, falling recent-MI delta, Chronic Injury branch eligibility, female URL routing, and compound symptom-duration parsing.
-- [ ] Confirm the production HST replay audit passes those same six prototype regression scenarios against the deployed Vercel build.
+- [ ] Confirm the June 2026 Word-document regression suite covers all 12 physician-tested scenarios plus compound symptom-duration parsing.
+- [ ] Confirm the production HST replay audit passes those same Word-document scenarios against the deployed Vercel build.
 - [ ] Confirm prompt-backed pathway state tests cover latest clinician correction precedence and HEART false-positive parsing guards.
 - [ ] Confirm `/api/chat` accepts only user-owned text and valid ECG image data from the browser.
 - [ ] Confirm final disposition text includes the treating-physician judgment disclaimer.

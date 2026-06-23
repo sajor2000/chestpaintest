@@ -59,6 +59,15 @@ describe("MD stress result helpers", () => {
 
     expect(aggregate.shouldFail).toBe(true);
     expect(aggregate.apiSummaries).toHaveLength(3);
+    expect(aggregate.apiSummaries[0]).toMatchObject({
+      name: "first failing case",
+      status: "fail",
+      requiredField: null,
+      terminal: null,
+      risk: null,
+      action: null,
+      error: "expected hst4, got null",
+    });
     expect(aggregate.failures.map((failure) => failure.name)).toEqual([
       "first failing case",
       "second failing case",
