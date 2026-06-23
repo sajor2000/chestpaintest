@@ -8,6 +8,8 @@ const PROD_BASE_URL =
   process.env.PROD_BASE_URL ?? "https://rush-chest-pain-cds.vercel.app";
 const OUTPUT_DIR = path.resolve("output/hst-regressions");
 const CHAT_TIMEOUT_MS = Number(process.env.HST_REPLAY_TIMEOUT_MS ?? 30_000);
+const CHAT_URL = new URL("/api/chat", PROD_BASE_URL).href;
+let replayCookie = "";
 
 function nowIso() {
   return new Date().toISOString();
@@ -85,6 +87,42 @@ function pathwayStatePart(streamText) {
   )?.data;
 }
 
+function sanitizedTargetUrl() {
+  const url = new URL(PROD_BASE_URL);
+  url.searchParams.delete("_vercel_share");
+  return url.href.replace(/\/$/, "");
+}
+
+function setCookieHeaders(headers) {
+  if (typeof headers.getSetCookie === "function") {
+    return headers.getSetCookie();
+  }
+  const setCookie = headers.get("set-cookie");
+  return setCookie ? [setCookie] : [];
+}
+
+function cookieHeaderFromSetCookies(setCookies) {
+  return setCookies
+    .flatMap((header) => header.split(/,(?=\s*[^;,\s]+=)/))
+    .map((header) => header.split(";")[0]?.trim())
+    .filter(Boolean)
+    .join("; ");
+}
+
+async function resolveReplayCookie() {
+  if (process.env.HST_REPLAY_COOKIE) return process.env.HST_REPLAY_COOKIE;
+
+  const targetUrl = new URL(PROD_BASE_URL);
+  if (!targetUrl.searchParams.has("_vercel_share")) return "";
+
+  const response = await fetch(targetUrl.href, { redirect: "manual" });
+  const cookie = cookieHeaderFromSetCookies(setCookieHeaders(response.headers));
+  if (!cookie) {
+    throw new Error("Vercel share URL did not return an auth cookie");
+  }
+  return cookie;
+}
+
 async function postChat(messages) {
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -95,9 +133,12 @@ async function postChat(messages) {
       controller.abort();
     }, CHAT_TIMEOUT_MS);
     try {
-      const response = await fetch(`${PROD_BASE_URL.replace(/\/$/, "")}/api/chat`, {
+      const headers = { "content-type": "application/json" };
+      if (replayCookie) headers.cookie = replayCookie;
+
+      const response = await fetch(CHAT_URL, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({ messages }),
         signal: controller.signal,
       });
@@ -171,9 +212,11 @@ async function runCase(testCase) {
 
 async function main() {
   const startedAt = nowIso();
+  replayCookie = await resolveReplayCookie();
   await mkdir(OUTPUT_DIR, { recursive: true });
   console.log(`HST production Word-document replay started at ${startedAt}`);
-  console.log(`Target: ${PROD_BASE_URL}`);
+  console.log(`Target: ${sanitizedTargetUrl()}`);
+  if (replayCookie) console.log("Using Vercel replay auth cookie");
   console.log(`Artifacts: ${OUTPUT_DIR}`);
 
   const results = [];
@@ -186,7 +229,7 @@ async function main() {
 
   const failed = results.filter((result) => result.status === "fail");
   const summary = {
-    target: PROD_BASE_URL,
+    target: sanitizedTargetUrl(),
     startedAt,
     finishedAt: nowIso(),
     casesRun: results.length,

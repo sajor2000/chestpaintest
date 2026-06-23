@@ -60,6 +60,8 @@ describe("production browser audit harness", () => {
     expect(script).toContain("data-pathway-state");
     expect(script).toContain("HST production Word-document replay");
     expect(script).toContain("HST_REPLAY_TIMEOUT_MS");
+    expect(script).toContain("HST_REPLAY_COOKIE");
+    expect(script).toContain("_vercel_share");
     expect(script).toContain("AbortController");
     expect(script).toContain("HST_WORD_DOCUMENT_CASES");
     expect(HST_WORD_DOCUMENT_CASE_COUNT).toBe(13);
